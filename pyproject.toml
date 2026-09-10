@@ -5,8 +5,10 @@ description = "Local MLOps and AI platform for football match video analysis"
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.116.0",
+    "opencv-python>=4.10,<5",
     "uvicorn[standard]>=0.35.0",
     "pydantic-settings>=2.10.0",
+    "ultralytics>=8.3,<9",
 ]
 
 [project.optional-dependencies]
