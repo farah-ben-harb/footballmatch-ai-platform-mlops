@@ -124,11 +124,10 @@ ruff: All checks passed
 pytest: 2 passed
 ```
 
-Known warning:
+Warnings:
 
 ```text
-FastAPI / Starlette emitted deprecation warnings related to TestClient/httpx.
-The tests still passed.
+No pytest warnings after replacing FastAPI TestClient/httpx with httpx2 ASGITransport.
 ```
 
 Known limitation:

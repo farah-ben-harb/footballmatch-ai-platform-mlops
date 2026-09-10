@@ -27,7 +27,7 @@ FastAPI application
 - `/health` endpoint
 - `/ready` endpoint
 - Pydantic settings object
-- pytest tests
+- pytest tests using `httpx2` ASGI transport
 - Ruff lint configuration
 - Dockerfile
 - `.dockerignore`
@@ -115,6 +115,12 @@ pytest:
 ```text
 tests\test_health.py .. [100%]
 2 passed
+```
+
+Warnings:
+
+```text
+No pytest warnings after replacing FastAPI TestClient/httpx with httpx2 ASGITransport.
 ```
 
 ## Errors encountered
