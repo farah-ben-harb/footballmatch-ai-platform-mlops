@@ -21,6 +21,9 @@ artifacts/
 outputs/
 mlruns/
 
+# Downloaded model weights
+*.pt
+
 # OS / editor
 .DS_Store
 Thumbs.db
