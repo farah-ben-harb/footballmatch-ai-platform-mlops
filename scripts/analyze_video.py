@@ -7,6 +7,7 @@ from pathlib import Path
 
 from footballmatch_api.cv.detector import YoloDetector
 from footballmatch_api.cv.pipeline import analyze_video
+from footballmatch_api.mlflow_tracking import DEFAULT_EXPERIMENT_NAME, track_analysis_run
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -26,6 +27,18 @@ def parse_arguments() -> argparse.Namespace:
     )
     parser.add_argument("--sample-fps", type=float, default=5.0, help="Frames per second to analyze.")
     parser.add_argument("--confidence", type=float, default=0.25, help="YOLO confidence threshold.")
+    parser.add_argument(
+        "--tracking-directory",
+        type=Path,
+        default=Path("mlruns"),
+        help="Local MLflow tracking directory.",
+    )
+    parser.add_argument(
+        "--experiment-name",
+        default=DEFAULT_EXPERIMENT_NAME,
+        help="MLflow experiment name.",
+    )
+    parser.add_argument("--run-name", default=None, help="Optional MLflow run name.")
     return parser.parse_args()
 
 
@@ -40,7 +53,17 @@ def main() -> None:
     )
     arguments.summary.parent.mkdir(parents=True, exist_ok=True)
     arguments.summary.write_text(json.dumps(asdict(summary), indent=2), encoding="utf-8")
-    print(json.dumps(asdict(summary), indent=2))
+    run_id = track_analysis_run(
+        summary,
+        confidence_threshold=arguments.confidence,
+        requested_sample_fps=arguments.sample_fps,
+        summary_path=arguments.summary,
+        annotated_video_path=arguments.output,
+        tracking_directory=arguments.tracking_directory,
+        experiment_name=arguments.experiment_name,
+        run_name=arguments.run_name,
+    )
+    print(json.dumps({**asdict(summary), "mlflow_run_id": run_id}, indent=2))
 
 
 if __name__ == "__main__":
