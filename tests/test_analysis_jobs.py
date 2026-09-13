@@ -1,0 +1,73 @@
+from io import BytesIO
+from pathlib import Path
+
+from footballmatch_api.cv.pipeline import AnalysisSummary
+from footballmatch_api.services import analysis_jobs
+
+
+class FakeDetector:
+    confidence_threshold = 0.25
+
+
+def test_save_upload_rejects_an_unsupported_extension(tmp_path: Path) -> None:
+    service = analysis_jobs.AnalysisJobService(tmp_path, 100)
+
+    try:
+        service.save_upload("match.exe", BytesIO(b"not-a-video"))
+    except ValueError as error:
+        assert "Only MP4" in str(error)
+    else:
+        raise AssertionError("Expected unsupported upload to be rejected")
+
+
+def test_run_completes_job_and_reuses_detector(monkeypatch, tmp_path: Path) -> None:
+    detector_calls = 0
+
+    def detector_factory() -> FakeDetector:
+        nonlocal detector_calls
+        detector_calls += 1
+        return FakeDetector()
+
+    def fake_pipeline(input_path: Path, output_path: Path, detector: FakeDetector) -> AnalysisSummary:
+        del detector
+        output_path.touch()
+        return AnalysisSummary(str(input_path), str(output_path), "fake-yolo", 30.0, 5.0, 2, {}, 1.0, 2.0)
+
+    monkeypatch.setattr(analysis_jobs, "track_analysis_run", lambda *_args, **_kwargs: "run-abc")
+    service = analysis_jobs.AnalysisJobService(
+        tmp_path,
+        100,
+        detector_factory=detector_factory,
+        pipeline=fake_pipeline,
+    )
+    job = service.save_upload("match.mp4", BytesIO(b"video"))
+
+    service.run(job.id)
+
+    completed = service.get(job.id)
+    assert completed is not None
+    assert completed.status == "completed"
+    assert completed.mlflow_run_id == "run-abc"
+    assert completed.result is not None
+    assert detector_calls == 1
+
+
+def test_run_records_pipeline_failures(monkeypatch, tmp_path: Path) -> None:
+    def failing_pipeline(*_args, **_kwargs):
+        raise RuntimeError("bad video")
+
+    monkeypatch.setattr(analysis_jobs, "track_analysis_run", lambda *_args, **_kwargs: "unused")
+    service = analysis_jobs.AnalysisJobService(
+        tmp_path,
+        100,
+        detector_factory=FakeDetector,
+        pipeline=failing_pipeline,
+    )
+    job = service.save_upload("match.mp4", BytesIO(b"video"))
+
+    service.run(job.id)
+
+    failed = service.get(job.id)
+    assert failed is not None
+    assert failed.status == "failed"
+    assert failed.error == "bad video"
