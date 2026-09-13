@@ -22,3 +22,12 @@ async def test_ready_returns_ready() -> None:
 
     assert response.status_code == 200
     assert response.json()["status"] == "ready"
+
+
+async def test_metrics_exposes_prometheus_format() -> None:
+    transport = httpx2.ASGITransport(app=app)
+    async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.get("/metrics")
+
+    assert response.status_code == 200
+    assert "footballmatch_http_requests_total" in response.text

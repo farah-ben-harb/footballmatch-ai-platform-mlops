@@ -1,0 +1,40 @@
+replicaCount: 1
+
+image:
+  repository: footballmatch-api
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8000
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "2"
+    memory: "3Gi"
+
+config:
+  environment: k3s
+  mlflowTrackingUri: http://mlflow:5000
+  mlflowExperimentName: football-video-analysis
+  maxUploadSizeBytes: "100000000"
+
+persistence:
+  size: 10Gi
+  storageClass: local-path
+
+serviceMonitor:
+  enabled: true
+  interval: 30s
+
+grafanaDashboard:
+  enabled: true
+
+ingress:
+  enabled: false
+  className: traefik
+  host: footballmatch.local

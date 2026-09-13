@@ -11,6 +11,12 @@ from uuid import uuid4
 from footballmatch_api.cv.detector import YoloDetector
 from footballmatch_api.cv.pipeline import AnalysisSummary, analyze_video
 from footballmatch_api.mlflow_tracking import track_analysis_run
+from footballmatch_api.observability import (
+    DETECTIONS,
+    FRAMES_PROCESSED,
+    INFERENCE_DURATION,
+    VIDEO_JOBS,
+)
 from footballmatch_api.schemas import JobResponse
 
 
@@ -76,6 +82,7 @@ class AnalysisJobService:
         job = AnalysisJob(id=job_id, original_filename=safe_name, input_path=input_path)
         with self._lock:
             self._jobs[job_id] = job
+        VIDEO_JOBS.labels(status="accepted").inc()
         return job
 
     def start(self, job_id: str) -> None:
@@ -109,11 +116,17 @@ class AnalysisJobService:
                 completed_job.status = "completed"
                 completed_job.result = asdict(summary)
                 completed_job.mlflow_run_id = run_id
+            VIDEO_JOBS.labels(status="completed").inc()
+            FRAMES_PROCESSED.inc(summary.frames_processed)
+            INFERENCE_DURATION.observe(summary.inference_seconds)
+            for label, count in summary.detections_by_label.items():
+                DETECTIONS.labels(label=label).inc(count)
         except Exception as error:  # noqa: BLE001 - a job must expose terminal failure state
             with self._lock:
                 failed_job = self._jobs[job_id]
                 failed_job.status = "failed"
                 failed_job.error = str(error)
+            VIDEO_JOBS.labels(status="failed").inc()
 
     def get(self, job_id: str) -> JobResponse | None:
         """Return a public snapshot of a job, if it exists."""

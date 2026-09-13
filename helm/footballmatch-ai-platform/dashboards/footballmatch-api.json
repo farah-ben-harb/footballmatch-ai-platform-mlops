@@ -1,0 +1,11 @@
+{
+  "title": "FootballMatch AI Platform",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {"title": "HTTP request rate", "type": "timeseries", "targets": [{"expr": "sum(rate(footballmatch_http_requests_total[5m])) by (path)"}]},
+    {"title": "Video jobs by state", "type": "timeseries", "targets": [{"expr": "sum(rate(footballmatch_video_jobs_total[5m])) by (status)"}]},
+    {"title": "Inference duration p95", "type": "timeseries", "targets": [{"expr": "histogram_quantile(0.95, sum(rate(footballmatch_inference_duration_seconds_bucket[5m])) by (le))"}]},
+    {"title": "Detections by label", "type": "timeseries", "targets": [{"expr": "sum(rate(footballmatch_detections_total[5m])) by (label)"}]}
+  ]
+}

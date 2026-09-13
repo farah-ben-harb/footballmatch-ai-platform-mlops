@@ -1,9 +1,12 @@
 from pathlib import Path
+from time import perf_counter
 from typing import Annotated
 
-from fastapi import FastAPI, File, HTTPException, UploadFile, status
+from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile, status
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from footballmatch_api.config import settings
+from footballmatch_api.observability import HTTP_DURATION, HTTP_REQUESTS
 from footballmatch_api.schemas import JobAcceptedResponse, JobResponse
 from footballmatch_api.services.analysis_jobs import AnalysisJobService
 
@@ -14,6 +17,17 @@ analysis_jobs = AnalysisJobService(
     mlflow_tracking_uri=settings.mlflow_tracking_uri,
     mlflow_experiment_name=settings.mlflow_experiment_name,
 )
+
+
+@app.middleware("http")
+async def observe_http_requests(request: Request, call_next):
+    """Record request count and latency without including query data in labels."""
+    started_at = perf_counter()
+    response = await call_next(request)
+    path = request.url.path
+    HTTP_REQUESTS.labels(request.method, path, response.status_code).inc()
+    HTTP_DURATION.labels(request.method, path).observe(perf_counter() - started_at)
+    return response
 
 
 @app.get("/health")
@@ -28,6 +42,12 @@ def ready() -> dict[str, str]:
     """Return readiness for serving traffic."""
 
     return {"status": "ready", "environment": settings.environment}
+
+
+@app.get("/metrics", include_in_schema=False)
+def metrics() -> Response:
+    """Expose Prometheus metrics for scraping."""
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.post("/analyze", response_model=JobAcceptedResponse, status_code=status.HTTP_202_ACCEPTED)
