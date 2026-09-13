@@ -36,11 +36,15 @@ class AnalysisJobService:
         self,
         runtime_directory: Path,
         max_upload_size_bytes: int,
+        mlflow_tracking_uri: str | None = None,
+        mlflow_experiment_name: str = "football-video-analysis",
         detector_factory: Callable[[], YoloDetector] = YoloDetector,
         pipeline: Callable[..., AnalysisSummary] = analyze_video,
     ) -> None:
         self.runtime_directory = runtime_directory
         self.max_upload_size_bytes = max_upload_size_bytes
+        self.mlflow_tracking_uri = mlflow_tracking_uri
+        self.mlflow_experiment_name = mlflow_experiment_name
         self._detector_factory = detector_factory
         self._pipeline = pipeline
         self._jobs: dict[str, AnalysisJob] = {}
@@ -97,6 +101,8 @@ class AnalysisJobService:
                 requested_sample_fps=5.0,
                 summary_path=summary_path,
                 annotated_video_path=output_path,
+                tracking_uri=self.mlflow_tracking_uri,
+                experiment_name=self.mlflow_experiment_name,
             )
             with self._lock:
                 completed_job = self._jobs[job_id]

@@ -1,0 +1,62 @@
+name: footballmatch-ai-platform
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mlflow}
+      POSTGRES_USER: ${POSTGRES_USER:-footballmatch}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  mlflow:
+    build:
+      context: ./docker/mlflow
+    command:
+      - server
+      - --host
+      - 0.0.0.0
+      - --port
+      - "5000"
+      - --backend-store-uri
+      - postgresql+psycopg2://${POSTGRES_USER:-footballmatch}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-mlflow}
+      - --serve-artifacts
+      - --artifacts-destination
+      - /mlartifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow-artifacts:/mlartifacts
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+    environment:
+      FOOTBALLMATCH_ENVIRONMENT: compose
+      FOOTBALLMATCH_MLFLOW_TRACKING_URI: http://mlflow:5000
+      FOOTBALLMATCH_MLFLOW_EXPERIMENT_NAME: football-video-analysis
+      FOOTBALLMATCH_RUNTIME_DIRECTORY: /app/runtime
+    depends_on:
+      mlflow:
+        condition: service_started
+    ports:
+      - "8000:8000"
+    volumes:
+      - api-runtime:/app/runtime
+    restart: unless-stopped
+
+volumes:
+  api-runtime:
+  mlflow-artifacts:
+  postgres-data:

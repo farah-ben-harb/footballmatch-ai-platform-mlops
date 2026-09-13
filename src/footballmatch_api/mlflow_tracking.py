@@ -18,12 +18,15 @@ def track_analysis_run(
     summary_path: Path,
     annotated_video_path: Path,
     tracking_directory: Path = Path("mlruns"),
+    tracking_uri: str | None = None,
     experiment_name: str = DEFAULT_EXPERIMENT_NAME,
     run_name: str | None = None,
 ) -> str:
     """Log one completed local analysis run and return its MLflow run identifier."""
-    tracking_directory.mkdir(parents=True, exist_ok=True)
-    mlflow.set_tracking_uri(tracking_directory.resolve().as_uri())
+    if tracking_uri is None:
+        tracking_directory.mkdir(parents=True, exist_ok=True)
+        tracking_uri = tracking_directory.resolve().as_uri()
+    mlflow.set_tracking_uri(tracking_uri)
     mlflow.set_experiment(experiment_name)
 
     with mlflow.start_run(run_name=run_name) as run:

@@ -11,6 +11,8 @@ app = FastAPI(title=settings.app_name, version=settings.app_version)
 analysis_jobs = AnalysisJobService(
     runtime_directory=Path(settings.runtime_directory),
     max_upload_size_bytes=settings.max_upload_size_bytes,
+    mlflow_tracking_uri=settings.mlflow_tracking_uri,
+    mlflow_experiment_name=settings.mlflow_experiment_name,
 )
 
 
