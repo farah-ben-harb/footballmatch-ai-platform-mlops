@@ -1,40 +1,97 @@
 # FootballMatch AI Platform
 
-Production-oriented local MLOps and AI Platform learning project for football match video analysis.
+Production-oriented, local-first MLOps learning project that turns football match
+video analysis into an observable, versioned, testable AI workload.
 
-## Current MVP
+## Problem and scope
 
-- FastAPI health and readiness endpoints.
-- CPU-first YOLO football-video analysis.
-- Annotated MP4 output and JSON inference metrics.
-- Local MLflow experiment tracking for parameters, metrics, tags, and artifacts.
-- Asynchronous FastAPI video-upload jobs with result polling.
-- pytest and Ruff quality checks.
+The project intentionally prioritizes MLOps and platform engineering over CV research.
+A CPU-friendly pretrained YOLO detector is the workload; FastAPI, MLflow, Docker,
+Kubernetes, observability, and GitOps are the platform around it.
 
-## Run the CV baseline
+```mermaid
+flowchart LR
+  V[Football video] --> A[FastAPI /analyze]
+  A --> J[Asynchronous analysis job]
+  J --> CV[OpenCV + sampled YOLO]
+  CV --> O[Annotated MP4 + JSON]
+  CV --> M[MLflow experiments]
+  M --> P[PostgreSQL backend in Compose]
+  A --> X[/metrics]
+  X --> PR[Prometheus]
+  PR --> G[Grafana]
+  GH[GitHub Actions] --> I[GHCR image]
+  GI[Argo CD] --> K[K3s + Helm]
+```
+
+## Implemented capabilities
+
+- FastAPI `/health`, `/ready`, `/metrics`, `/analyze`, `/jobs/{id}`, and `/matches/{id}`.
+- CPU-first YOLO11n video inference with deterministic frame sampling.
+- Annotated MP4 and JSON summaries; observed baseline processed 190 frames with person
+  and sports-ball detections.
+- Local MLflow runs with parameters, metrics, tags, output artifacts, and model metadata.
+- Explainable K-Means jersey-colour clustering component.
+- Asynchronous job lifecycle with explicit `queued`, `running`, `completed`, and `failed` states.
+- Docker/Compose definitions for API, MLflow, and PostgreSQL.
+- GitHub Actions quality, secret, SAST, container, and image-publication workflow.
+- Helm chart, Prometheus metrics, Grafana dashboard definition, and Argo CD Application manifest.
+
+## Run locally
+
+Requirements: Python 3.10, FFmpeg, and a permitted football video at `data/raw/match.mp4`.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe scripts\analyze_video.py --input data\raw\match.mp4
-```
-
-The command writes ignored local artifacts to `artifacts/annotated-match.mp4` and
-`artifacts/analysis-summary.json`. The pretrained `yolo11n.pt` model detects
-COCO `person` and `sports ball`; it does not distinguish players from referees.
-MLflow run data is stored locally under `mlruns/`.
-
-## Run the API
-
-```powershell
 .\.venv\Scripts\python.exe -m uvicorn footballmatch_api.main:app --host 127.0.0.1 --port 8000
 ```
 
-`POST /analyze` accepts a permitted video and returns a job ID. Poll `GET /jobs/{id}`
-until it reaches `completed` or `failed`; `GET /matches/{id}` returns completed results.
-
-## Validation
+Upload with PowerShell:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest
-.\.venv\Scripts\python.exe -m ruff check .
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/analyze -Form @{ file = Get-Item data\raw\match.mp4 }
 ```
+
+Poll the returned ID with `GET /jobs/{id}`. Generated data, artifacts, MLflow files,
+model weights, and `.env` remain outside Git.
+
+## Compose and deployment
+
+Copy `.env.example` to `.env`, set a real local-only PostgreSQL password, then execute
+on the Ubuntu VM:
+
+```bash
+docker compose up --build -d
+docker compose ps
+```
+
+K3s, Prometheus/Grafana, and Argo CD commands are documented in `docs/phases/`.
+The Helm chart is at `helm/footballmatch-ai-platform`; GitOps configuration is at
+`gitops/argocd/footballmatch-application.yaml`.
+
+## Testing and security
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m ruff check .
+helm lint helm\footballmatch-ai-platform
+```
+
+GitHub Actions adds Gitleaks, Semgrep, Docker build, and Trivy. Read [SECURITY.md](SECURITY.md)
+before using real data or deploying outside a local VM.
+
+## Current limitations
+
+- `person` does not separate player, referee, or spectator; counts are per frame, not unique identities.
+- Jobs are in memory, so restarts lose their state and replicas are limited to one.
+- Docker Compose, K3s, Prometheus/Grafana, and Argo CD manifests are authored and linted,
+  but runtime deployment still requires Ubuntu VM evidence.
+- RAG/Ollama is intentionally deferred until the MLOps core is proven stable.
+
+## Documentation
+
+- `docs/phases/`: implementation evidence, validation, limitations, and PR summaries.
+- `docs/learning/`: concepts, trade-offs, and interview answers.
+- `docs/release/`: v0.1.0 release checklist and portfolio evidence plan.
