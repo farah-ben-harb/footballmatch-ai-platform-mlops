@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: footballmatch-ai-platform
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/farah-ben-harb/footballmatch-ai-platform-mlops.git
+    targetRevision: main
+    path: helm/footballmatch-ai-platform
+    helm:
+      values: |
+        image:
+          repository: ghcr.io/farah-ben-harb/footballmatch-ai-platform-mlops
+          tag: v0.1.0
+          pullPolicy: IfNotPresent
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: footballmatch
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
