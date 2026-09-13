@@ -7,6 +7,7 @@ Production-oriented local MLOps and AI Platform learning project for football ma
 - FastAPI health and readiness endpoints.
 - CPU-first YOLO football-video analysis.
 - Annotated MP4 output and JSON inference metrics.
+- Local MLflow experiment tracking for parameters, metrics, tags, and artifacts.
 - pytest and Ruff quality checks.
 
 ## Run the CV baseline
@@ -19,6 +20,7 @@ Production-oriented local MLOps and AI Platform learning project for football ma
 The command writes ignored local artifacts to `artifacts/annotated-match.mp4` and
 `artifacts/analysis-summary.json`. The pretrained `yolo11n.pt` model detects
 COCO `person` and `sports ball`; it does not distinguish players from referees.
+MLflow run data is stored locally under `mlruns/`.
 
 ## Validation
 
