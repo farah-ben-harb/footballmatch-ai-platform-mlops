@@ -52,7 +52,11 @@ jobs:
           tags: footballmatch-api:ci
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: footballmatch-api:ci
+          # Exporting the loaded YOLO/PyTorch image for scanning exceeds the
+          # ephemeral disk on GitHub-hosted runners. This blocks dependency and
+          # IaC findings; scan the pushed image from the Ubuntu release host.
+          scan-type: fs
+          scan-ref: .
           format: table
           exit-code: "1"
           ignore-unfixed: true

@@ -64,4 +64,6 @@ What do Gitleaks, Semgrep, and Trivy scan?
 ### Interview answers
 
 Gitleaks detects likely credentials in Git history; Semgrep performs source-level
-static analysis; Trivy scans dependencies and container images for known CVEs.
+static analysis; Trivy scans dependencies, infrastructure configuration, and container
+images for known CVEs. CI scans the repository because exporting the large local image
+exceeds GitHub-runner disk; the Ubuntu release host scans the pushed image.
