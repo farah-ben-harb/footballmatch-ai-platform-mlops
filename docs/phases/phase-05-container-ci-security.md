@@ -43,8 +43,9 @@ port mappings. Run these on Ubuntu because Docker is unavailable on the Windows 
 - `.env` is ignored; `.env.example` contains a non-secret placeholder only.
 - The Compose database password must be changed in the local `.env`.
 - Containers run as a non-root `app` user where possible.
-- Gitleaks prevents accidental secrets; Semgrep performs static analysis; Trivy scans
-  the API image for high/critical vulnerabilities.
+- Gitleaks prevents accidental secrets; Semgrep performs static analysis; Trivy blocks
+  high/critical dependency and infrastructure-as-code findings. Full image scanning
+  moves to the Ubuntu release environment because GitHub-runner disk is limited.
 
 ## Limitations
 

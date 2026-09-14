@@ -79,8 +79,10 @@ The Helm chart is at `helm/footballmatch-ai-platform`; GitOps configuration is a
 helm lint helm\footballmatch-ai-platform
 ```
 
-GitHub Actions adds Gitleaks, Semgrep, Docker build, and Trivy. Read [SECURITY.md](SECURITY.md)
-before using real data or deploying outside a local VM.
+GitHub Actions adds Gitleaks, Semgrep, a Docker build, and a blocking Trivy filesystem
+scan for dependency and IaC vulnerabilities. A full scan of the pushed image is a
+release-environment check to run on the Ubuntu VM, where disk capacity is controlled.
+Read [SECURITY.md](SECURITY.md) before using real data or deploying outside a local VM.
 
 ## Current limitations
 
