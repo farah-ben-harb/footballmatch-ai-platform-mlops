@@ -7,7 +7,7 @@ and Ollama only after the MLOps core is stable.
 
 ## Decision
 
-Deferred for v0.1.0. Phases 5–7 are authored but await real Ubuntu evidence for
+Deferred for v0.1.0. Phases 5–7 are authored but await real local deployment evidence for
 Compose, K3s, monitoring, and GitOps. Adding an LLM before those foundations are
 running would increase scope without strengthening the platform core.
 
@@ -21,9 +21,9 @@ question -> retrieval -> grounded context -> Ollama -> read-only answer
 
 ## Preconditions
 
-- Compose, K3s, Prometheus/Grafana, and Argo CD are validated on Ubuntu.
+- Compose, K3s, Prometheus/Grafana, and Argo CD are validated on the local deployment host.
 - PostgreSQL is migrated to an image that includes pgvector.
-- A CPU-compatible Ollama model and embedding model are measured on the VM.
+- A CPU-compatible Ollama model and embedding model are measured on the local deployment host.
 - Retrieved sources and answer limitations are visible in the API response.
 
 ## Why this is the correct scope decision

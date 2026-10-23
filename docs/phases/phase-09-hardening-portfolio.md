@@ -10,13 +10,13 @@ reviewable, and ready for portfolio evidence.
 - Reworked README around architecture, verified capabilities, run paths, limitations,
   testing, security, deployment, and documentation.
 - Added a security policy and a release checklist with required evidence.
-- Kept claims constrained to validated local work; Ubuntu/K3s evidence is deliberately
+- Kept claims constrained to validated local work; K3s runtime evidence is deliberately
   still marked pending.
 
 ## Validation
 
 - Repository test/lint evidence is maintained by preceding phase validation.
-- The release is not tagged until the checklist passes on the Ubuntu environment.
+- The release is not tagged until the checklist passes on the local deployment environment.
 
 ## How I would explain this phase in an interview
 
