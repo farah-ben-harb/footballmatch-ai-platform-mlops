@@ -19,9 +19,9 @@ Git main -> Argo CD Application -> Helm render -> K3s desired state
 - Automated sync, prune, self-healing, and namespace creation.
 - A CI publish job that publishes verified `main` images to free GitHub Container
   Registry (GHCR) after test, secret, SAST, and Trivy jobs succeed.
-- GitOps deploy configuration uses immutable release tag `v0.1.0`, not `latest`.
+- GitOps deploy configuration pins the CI-published commit-SHA image tag, not `latest`.
 
-## Commands to execute on Ubuntu
+## Commands to execute on the local k3d cluster
 
 ```bash
 kubectl create namespace argocd
@@ -34,7 +34,7 @@ kubectl get pods -n footballmatch
 ## Validation
 
 - YAML manifests are committed and ready for an Argo CD-enabled K3s cluster.
-- Runtime sync, drift repair, and rollback evidence are pending the Ubuntu VM.
+- Runtime sync, drift repair, and rollback evidence are pending the local Docker Desktop/k3d host.
 
 ## Security considerations
 
@@ -45,9 +45,9 @@ kubectl get pods -n footballmatch
 
 ## Limitations
 
-- The `v0.1.0` image must be published before Argo can deploy it.
+- The manifest pins a CI-published commit-SHA image; a future release will promote it to `v0.1.0`.
 - Image tag promotion is manually represented in Git; automated image update is deferred.
-- Argo CD itself is not installed until the VM audit is complete.
+- Argo CD itself is not installed until the local host audit is complete.
 
 ## How I would explain this phase in an interview
 
