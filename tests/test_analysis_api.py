@@ -1,7 +1,7 @@
 from io import BytesIO
 from pathlib import Path
 
-import httpx2
+import httpx
 import pytest
 
 from footballmatch_api import main
@@ -32,8 +32,8 @@ class FakeJobs:
 async def test_analyze_returns_accepted_job(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_jobs = FakeJobs()
     monkeypatch.setattr(main, "analysis_jobs", fake_jobs)
-    transport = httpx2.ASGITransport(app=main.app)
-    async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
+    transport = httpx.ASGITransport(app=main.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         response = await client.post("/analyze", files={"file": ("match.mp4", b"video", "video/mp4")})
 
     assert response.status_code == 202
@@ -44,8 +44,8 @@ async def test_analyze_returns_accepted_job(monkeypatch: pytest.MonkeyPatch) -> 
 async def test_get_job_returns_404_for_unknown_job(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_jobs = FakeJobs()
     monkeypatch.setattr(main, "analysis_jobs", fake_jobs)
-    transport = httpx2.ASGITransport(app=main.app)
-    async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
+    transport = httpx.ASGITransport(app=main.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         response = await client.get("/jobs/unknown")
 
     assert response.status_code == 404
