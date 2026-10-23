@@ -8,7 +8,7 @@ Create a local, CPU-friendly football-video inference baseline with observable o
 
 - Phase 1 FastAPI foundation was merged to `main`.
 - Windows Python 3.10 virtual environment and FFmpeg were available.
-- Docker validation and Ubuntu VM audit remain pending.
+- Docker validation and local deployment-host audit remain pending.
 
 ## Architecture
 

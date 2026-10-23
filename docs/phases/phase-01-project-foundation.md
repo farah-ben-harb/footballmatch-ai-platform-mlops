@@ -27,7 +27,7 @@ FastAPI application
 - `/health` endpoint
 - `/ready` endpoint
 - Pydantic settings object
-- pytest tests using `httpx2` ASGI transport
+- pytest tests using `httpx` ASGI transport
 - Ruff lint configuration
 - Dockerfile
 - `.dockerignore`
@@ -120,7 +120,7 @@ tests\test_health.py .. [100%]
 Warnings:
 
 ```text
-No pytest warnings after replacing FastAPI TestClient/httpx with httpx2 ASGITransport.
+No pytest warnings while using `httpx` ASGITransport for API tests.
 ```
 
 ## Errors encountered
@@ -137,7 +137,7 @@ Docker CLI is not installed or not available on the Windows PATH.
 
 ## Fixes
 
-Docker validation is deferred until Docker is available, ideally on the Ubuntu VM.
+Docker validation is deferred until Docker is available on the local deployment host.
 
 ## Security considerations
 
@@ -173,7 +173,7 @@ Summary:
 ## Limitations
 
 - Docker image build has not been validated because Docker is unavailable in the current shell.
-- VM capacity audit from Phase 0 is still pending.
+- Local deployment-host capacity audit is still pending.
 - No video processing exists yet.
 
 ## Next phase

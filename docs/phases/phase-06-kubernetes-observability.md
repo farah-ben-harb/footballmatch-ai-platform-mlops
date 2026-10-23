@@ -20,7 +20,7 @@ Deployment -> Service -> ServiceMonitor -> Prometheus -> Grafana
 - Helm Deployment, Service, ConfigMap, PVC, optional Ingress, ServiceMonitor, and dashboard.
 - Non-root execution, liveness/readiness probes, and CPU/memory requests and limits.
 
-## Commands to execute on Ubuntu
+## Original K3s commands
 
 ```bash
 curl -sfL https://get.k3s.io | sh -
@@ -33,13 +33,14 @@ kubectl get pods,svc,pvc -n footballmatch
 ```
 
 K3s is lightweight Kubernetes. `helm upgrade --install` installs on first run and
-upgrades later. Do not install before the VM audit records CPU, RAM, disk, ports, and services.
+upgrades later. These direct-install commands are retained as learning notes; the current
+delivery target is Docker Desktop/WSL2 with k3d, so runtime evidence remains pending there.
 
 ## Validation
 
 - 26 tests passed and Ruff passed.
 - `helm lint` and `helm template` passed.
-- K3s/Prometheus/Grafana runtime deployment is pending the Ubuntu VM.
+- K3s/Prometheus/Grafana runtime deployment is pending the local Docker Desktop/k3d host.
 
 ## Metrics
 
@@ -54,7 +55,7 @@ upgrades later. Do not install before the VM audit records CPU, RAM, disk, ports
 
 - The local-path PVC is node-local and not highly available.
 - In-memory jobs prevent safe multi-replica scaling; use one replica until durable state exists.
-- Cluster dashboard evidence remains pending the VM deployment.
+- Cluster dashboard evidence remains pending the local k3d deployment.
 
 ## How I would explain this phase in an interview
 

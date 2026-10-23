@@ -31,12 +31,12 @@ curl http://localhost:8000/health
 ```
 
 `up --build -d` rebuilds images then runs services detached. `ps` shows health and
-port mappings. Run these on Ubuntu because Docker is unavailable on the Windows host.
+port mappings. Run these on the local Docker Desktop/WSL2 host.
 
 ## Validation
 
 - 25 tests passed and Ruff passed locally.
-- Docker/Compose runtime validation is pending the Ubuntu VM.
+- Docker/Compose runtime validation is pending the local Docker Desktop/WSL2 host.
 
 ## Security considerations
 
@@ -45,7 +45,7 @@ port mappings. Run these on Ubuntu because Docker is unavailable on the Windows 
 - Containers run as a non-root `app` user where possible.
 - Gitleaks prevents accidental secrets; Semgrep performs static analysis; Trivy blocks
   high/critical dependency and infrastructure-as-code findings. Full image scanning
-  moves to the Ubuntu release environment because GitHub-runner disk is limited.
+  moves to the local release environment because GitHub-runner disk is limited.
 
 ## Limitations
 

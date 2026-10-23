@@ -18,8 +18,8 @@ repository owner.
 - Gitleaks scans Git history for likely secrets.
 - Semgrep scans Python source for risky patterns.
 - Trivy blocks high/critical dependency and infrastructure-as-code findings in CI.
-  A full pushed-image scan is a release-environment check on the Ubuntu VM because
-  exporting the local YOLO/PyTorch image can exceed a GitHub runner's ephemeral disk.
+  A full pushed-image scan is a release-environment check on the local deployment host
+  because exporting the local YOLO/PyTorch image can exceed a GitHub runner's ephemeral disk.
 - Containers use a non-root runtime user.
 - Uploads use an extension allow-list and size limit; content validation and malware
   scanning remain future work.

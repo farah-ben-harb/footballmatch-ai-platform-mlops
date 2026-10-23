@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -24,7 +24,7 @@ jobs:
       - run: python -m pytest -q
 
   secrets:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,7 +34,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   sast:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: returntocorp/semgrep-action@v1
@@ -42,7 +42,7 @@ jobs:
           config: p/python
 
   container-scan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: docker/build-push-action@v6
@@ -50,11 +50,8 @@ jobs:
           context: .
           push: false
           tags: footballmatch-api:ci
-      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
-          # Exporting the loaded YOLO/PyTorch image for scanning exceeds the
-          # ephemeral disk on GitHub-hosted runners. This blocks dependency and
-          # IaC findings; scan the pushed image from the Ubuntu release host.
           scan-type: fs
           scan-ref: .
           format: table
@@ -65,7 +62,7 @@ jobs:
   publish-image:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [test, secrets, sast, container-scan]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: docker/login-action@v3

@@ -3,6 +3,14 @@
 Production-oriented, local-first MLOps learning project that turns football match
 video analysis into an observable, versioned, testable AI workload.
 
+## Delivery status
+
+The application, tests, CI security controls, container build, Helm chart, and GitOps
+manifests are implemented. The GitHub Actions workflow has successfully built and
+published the container image to GHCR. Runtime validation of Docker Compose, local K3s,
+Prometheus/Grafana, and Argo CD is the remaining delivery milestone; it is deliberately
+not presented as completed work.
+
 ## Problem and scope
 
 The project intentionally prioritizes MLOps and platform engineering over CV research.
@@ -60,7 +68,8 @@ model weights, and `.env` remain outside Git.
 ## Compose and deployment
 
 Copy `.env.example` to `.env`, set a real local-only PostgreSQL password, then execute
-on the Ubuntu VM:
+on a local Docker host. On Windows, the intended host is Docker Desktop using its WSL2
+backend; a local K3s cluster will be created with k3d.
 
 ```bash
 docker compose up --build -d
@@ -81,7 +90,7 @@ helm lint helm\footballmatch-ai-platform
 
 GitHub Actions adds Gitleaks, Semgrep, a Docker build, and a blocking Trivy filesystem
 scan for dependency and IaC vulnerabilities. A full scan of the pushed image is a
-release-environment check to run on the Ubuntu VM, where disk capacity is controlled.
+release-environment check to run on the local deployment host, where disk capacity is controlled.
 Read [SECURITY.md](SECURITY.md) before using real data or deploying outside a local VM.
 
 ## Current limitations
@@ -89,7 +98,7 @@ Read [SECURITY.md](SECURITY.md) before using real data or deploying outside a lo
 - `person` does not separate player, referee, or spectator; counts are per frame, not unique identities.
 - Jobs are in memory, so restarts lose their state and replicas are limited to one.
 - Docker Compose, K3s, Prometheus/Grafana, and Argo CD manifests are authored and linted,
-  but runtime deployment still requires Ubuntu VM evidence.
+  but runtime deployment evidence is still pending on the local Docker Desktop/k3d host.
 - RAG/Ollama is intentionally deferred until the MLOps core is proven stable.
 
 ## Documentation
