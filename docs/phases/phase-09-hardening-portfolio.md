@@ -12,6 +12,9 @@ reviewable, and ready for portfolio evidence.
 - Added a security policy and a release checklist with required evidence.
 - Kept claims constrained to validated local work; K3s runtime evidence is deliberately
   still marked pending.
+- Presented the portfolio around the delivered local MVP, linked validation evidence,
+  and documented operating scope. Deployment definitions are described as configuration
+  assets, separately from application behaviour and measured results.
 
 ## Validation
 
