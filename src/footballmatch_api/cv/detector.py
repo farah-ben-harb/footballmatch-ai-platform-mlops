@@ -1,8 +1,12 @@
-"""YOLO detector and multi-object tracking adapter."""
+"""YOLO object detection and ByteTrack multi-object tracking."""
 
+import os
+from collections.abc import Callable
 from dataclasses import dataclass
+from threading import Lock
 from typing import Any
 
+import mlflow
 from ultralytics import YOLO
 
 FOOTBALL_RELEVANT_LABELS = frozenset(
@@ -13,9 +17,9 @@ FOOTBALL_RELEVANT_LABELS = frozenset(
 )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Detection:
-    """Model-independent object detection for one video frame."""
+    """Single object detection."""
 
     class_id: int
     label: str
@@ -30,7 +34,7 @@ class Detection:
 
 
 class YoloDetector:
-    """YOLO detection and ByteTrack tracking adapter."""
+    """YOLO detector with optional MLflow Registry model loading."""
 
     def __init__(
         self,
@@ -38,36 +42,64 @@ class YoloDetector:
         confidence_threshold: float = 0.25,
         device: str = "cpu",
         tracker: str = "bytetrack.yaml",
+        model_uri: str | None = None,
+        tracking_uri: str | None = None,
         model: Any | None = None,
+        model_loader: Callable[[str], Any] | None = None,
     ) -> None:
-        if not 0 < confidence_threshold <= 1:
+        self.local_model_name = model_name
+
+        self.model_uri = (
+            model_uri
+            or os.getenv(
+                "FOOTBALLMATCH_DETECTOR_MODEL_URI"
+            )
+            or None
+        )
+
+        self.tracking_uri = (
+            tracking_uri
+            or os.getenv(
+                "FOOTBALLMATCH_MLFLOW_TRACKING_URI"
+            )
+            or None
+        )
+
+        # Used in summaries and MLflow lineage.
+        self.model_name = (
+            self.model_uri
+            or self.local_model_name
+        )
+
+        if not 0.0 < confidence_threshold <= 1.0:
             raise ValueError(
-                "Confidence threshold must be in the interval (0, 1]"
+                "confidence_threshold must be in the interval (0, 1]"
             )
 
-        self.model_name = model_name
-        self.confidence_threshold = confidence_threshold
+        self.confidence_threshold = (
+            confidence_threshold
+        )
         self.device = device
         self.tracker = tracker
 
-        self._model = (
-            model
-            if model is not None
-            else YOLO(model_name)
-        )
+        self._model: Any | None = model
+        self._model_loader = model_loader
+        self._model_lock = Lock()
 
     def detect(
         self,
         frame: Any,
         confidence_threshold: float | None = None,
     ) -> list[Detection]:
-        """Run object detection without persistent tracking."""
+        """Run object detection on one frame."""
+
+        model = self._get_model()
 
         threshold = self._resolve_threshold(
             confidence_threshold
         )
 
-        result = self._model.predict(
+        result = model.predict(
             source=frame,
             conf=threshold,
             device=self.device,
@@ -83,13 +115,15 @@ class YoloDetector:
         frame: Any,
         confidence_threshold: float | None = None,
     ) -> list[Detection]:
-        """Track football-relevant objects across sequential frames."""
+        """Run YOLO + ByteTrack on one frame."""
+
+        model = self._get_model()
 
         threshold = self._resolve_threshold(
             confidence_threshold
         )
 
-        result = self._model.track(
+        result = model.track(
             source=frame,
             conf=threshold,
             device=self.device,
@@ -103,13 +137,19 @@ class YoloDetector:
         )
 
     def reset_tracking(self) -> None:
-        """Clear tracker state before processing a new video."""
+        """Reset ByteTrack state between independent videos."""
+
+        if self._model is None:
+            return
 
         predictor = getattr(
             self._model,
             "predictor",
             None,
         )
+
+        if predictor is None:
+            return
 
         trackers = getattr(
             predictor,
@@ -130,29 +170,84 @@ class YoloDetector:
             if callable(reset):
                 reset()
 
-    def _resolve_threshold(
-        self,
-        confidence_threshold: float | None,
-    ) -> float:
-        threshold = (
-            confidence_threshold
-            if confidence_threshold is not None
-            else self.confidence_threshold
-        )
+    def _get_model(self) -> Any:
+        """Lazy-load and reuse the detector model."""
 
-        if not 0 < threshold <= 1:
-            raise ValueError(
-                "Confidence threshold must be in the interval (0, 1]"
+        if self._model is not None:
+            return self._model
+
+        with self._model_lock:
+            if self._model is None:
+                self._model = (
+                    self._load_model()
+                )
+
+        return self._model
+
+    def _load_model(self) -> Any:
+        """Load YOLO locally or from MLflow Model Registry."""
+
+        if not self.model_uri:
+            return YOLO(
+                self.local_model_name
             )
 
-        return threshold
+        if self._model_loader is not None:
+            loaded_model = self._model_loader(
+                self.model_uri
+            )
+        else:
+            if self.tracking_uri:
+                mlflow.set_tracking_uri(
+                    self.tracking_uri
+                )
+                mlflow.set_registry_uri(
+                    self.tracking_uri
+                )
+
+            loaded_model = (
+                mlflow.pyfunc.load_model(
+                    self.model_uri
+                )
+            )
+
+        python_model = (
+            loaded_model.unwrap_python_model()
+        )
+
+        model = getattr(
+            python_model,
+            "model",
+            None,
+        )
+
+        if model is None:
+            raise RuntimeError(
+                "The registered MLflow model "
+                "does not expose a loaded YOLO model"
+            )
+
+        if not hasattr(
+            model,
+            "track",
+        ):
+            raise RuntimeError(
+                "The registered model does not "
+                "support YOLO tracking"
+            )
+
+        return model
 
     def _result_to_detections(
         self,
         result: Any,
     ) -> list[Detection]:
+        """Convert an Ultralytics result into domain detections."""
+
         if result.boxes is None:
             return []
+
+        model = self._get_model()
 
         detections: list[Detection] = []
 
@@ -162,14 +257,19 @@ class YoloDetector:
             )
 
             label = str(
-                self._model.names[class_id]
+                model.names[
+                    class_id
+                ]
             )
 
-            if label not in FOOTBALL_RELEVANT_LABELS:
+            if (
+                label
+                not in FOOTBALL_RELEVANT_LABELS
+            ):
                 continue
 
-            track_id = self._extract_track_id(
-                box
+            coordinates = (
+                box.xyxy[0].tolist()
             )
 
             detections.append(
@@ -181,11 +281,14 @@ class YoloDetector:
                     ),
                     bounding_box=tuple(
                         float(value)
-                        for value in box.xyxy[
-                            0
-                        ].tolist()
+                        for value
+                        in coordinates
                     ),
-                    track_id=track_id,
+                    track_id=(
+                        self._extract_track_id(
+                            box
+                        )
+                    ),
                 )
             )
 
@@ -195,23 +298,31 @@ class YoloDetector:
     def _extract_track_id(
         box: Any,
     ) -> int | None:
-        """Extract an Ultralytics track ID when tracking is active."""
+        """Extract ByteTrack ID when available."""
 
-        box_id = getattr(
+        track_ids = getattr(
             box,
             "id",
             None,
         )
 
-        if box_id is None:
+        if track_ids is None:
             return None
 
-        try:
-            return int(
-                box_id[0]
-            )
-        except (
-            IndexError,
-            TypeError,
-        ):
+        if len(track_ids) == 0:
             return None
+
+        return int(
+            track_ids[0]
+        )
+
+    def _resolve_threshold(
+        self,
+        confidence_threshold: float | None,
+    ) -> float:
+        """Resolve per-request or default confidence threshold."""
+
+        if confidence_threshold is None:
+            return self.confidence_threshold
+
+        return confidence_threshold
