@@ -169,6 +169,23 @@ def track_analysis_run(
 
             metrics[metric_name] = float(count)
 
+        total_unique_tracks = 0
+
+        for label, count in (
+            summary.unique_tracks_by_label.items()
+        ):
+            metric_name = (
+                "unique_tracks_"
+                + label.replace(" ", "_")
+            )
+
+            metrics[metric_name] = float(count)
+            total_unique_tracks += count
+
+        metrics["unique_tracks_total"] = float(
+            total_unique_tracks
+        )
+
         mlflow.log_metrics(metrics)
 
         tags = {
