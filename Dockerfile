@@ -16,7 +16,13 @@ RUN apt-get update \
 COPY pyproject.toml README.md ./
 COPY src ./src
 
-RUN pip install --no-cache-dir . \
+RUN python -m pip install --upgrade pip setuptools wheel \
+    && python -m pip install --no-cache-dir \
+        "torch==2.14.1+cpu" \
+        "torchvision==0.29.1+cpu" \
+        --index-url https://download.pytorch.org/whl/cpu \
+        --extra-index-url https://pypi.org/simple \
+    && python -m pip install --no-cache-dir . \
     && mkdir -p /app/runtime /home/app/.config/Ultralytics \
     && chown -R app:app /app /home/app
 

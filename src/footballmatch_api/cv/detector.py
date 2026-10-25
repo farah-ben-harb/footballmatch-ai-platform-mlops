@@ -29,18 +29,36 @@ class YoloDetector:
         model: Any | None = None,
     ) -> None:
         if not 0 < confidence_threshold <= 1:
-            raise ValueError("Confidence threshold must be in the interval (0, 1]")
+            raise ValueError(
+                "Confidence threshold must be in the interval (0, 1]"
+            )
 
         self.model_name = model_name
         self.confidence_threshold = confidence_threshold
         self.device = device
         self._model = model if model is not None else YOLO(model_name)
 
-    def detect(self, frame: Any) -> list[Detection]:
+    def detect(
+        self,
+        frame: Any,
+        confidence_threshold: float | None = None,
+    ) -> list[Detection]:
         """Predict football-relevant objects in one OpenCV frame."""
+
+        threshold = (
+            confidence_threshold
+            if confidence_threshold is not None
+            else self.confidence_threshold
+        )
+
+        if not 0 < threshold <= 1:
+            raise ValueError(
+                "Confidence threshold must be in the interval (0, 1]"
+            )
+
         result = self._model.predict(
             source=frame,
-            conf=self.confidence_threshold,
+            conf=threshold,
             device=self.device,
             verbose=False,
         )[0]
@@ -49,9 +67,11 @@ class YoloDetector:
             return []
 
         detections: list[Detection] = []
+
         for box in result.boxes:
             class_id = int(box.cls[0])
             label = str(self._model.names[class_id])
+
             if label not in FOOTBALL_RELEVANT_LABELS:
                 continue
 
@@ -60,7 +80,10 @@ class YoloDetector:
                     class_id=class_id,
                     label=label,
                     confidence=float(box.conf[0]),
-                    bounding_box=tuple(float(value) for value in box.xyxy[0].tolist()),
+                    bounding_box=tuple(
+                        float(value)
+                        for value in box.xyxy[0].tolist()
+                    ),
                 )
             )
 
