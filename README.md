@@ -88,8 +88,27 @@ The runtime setting above keeps uploads and outputs inside the Git-ignored `arti
 
 ### 3. Analyze a video
 
-Use a short football clip you have permission to process. Place it at
-`data/raw/match.mp4` after creating the directory. Videos are not bundled with the repository.
+On Ubuntu, download the short sample with:
+
+```bash
+chmod +x scripts/download_sample_video.sh
+./scripts/download_sample_video.sh
+```
+
+Requires `curl`, `ffmpeg` with the `libx264` encoder, and `ffprobe`. The helper downloads
+only a 9.2-second WebM (about 5.3 MiB), converts it to H.264 MP4 at 25 FPS without audio, and
+validates the codec and duration. It creates `data/raw/match.mp4`, prints its size,
+and refuses to overwrite an existing file. Temporary files are cleaned up on failure.
+The existing `data/` Git ignore rule excludes the clip from commits.
+
+Sample: [Girls football training](https://commons.wikimedia.org/wiki/File:Girls_football_training.webm)
+by Evworo, licensed under [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/).
+Changes: MP4/H.264 conversion at 25 FPS and removal of audio. If sharing the converted sample
+or annotated derivatives, retain attribution, identify your changes, and follow the
+license's ShareAlike terms. This training footage is a smoke-test input, not a detection benchmark.
+
+Alternatively, place your own permitted short clip at `data/raw/match.mp4`.
+Videos are not bundled with the repository.
 
 In a second PowerShell 7 terminal, from the repository root:
 
