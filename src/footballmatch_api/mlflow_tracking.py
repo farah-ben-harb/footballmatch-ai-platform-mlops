@@ -186,6 +186,30 @@ def track_analysis_run(
             total_unique_tracks
         )
 
+        metrics["classified_player_tracks"] = float(
+            len(summary.team_assignments)
+        )
+
+        metrics["team_feature_tracks"] = float(
+            summary.team_feature_tracks
+        )
+
+        metrics[
+            "team_classification_coverage"
+        ] = summary.team_classification_coverage
+
+        if summary.team_silhouette_score is not None:
+            metrics[
+                "team_silhouette_score"
+            ] = summary.team_silhouette_score
+
+        for team_name, count in (
+            summary.team_counts.items()
+        ):
+            metrics[
+                f"{team_name}_tracks"
+            ] = float(count)
+
         mlflow.log_metrics(metrics)
 
         tags = {

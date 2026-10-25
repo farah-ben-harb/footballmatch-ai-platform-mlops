@@ -9,6 +9,13 @@ from typing import Any, Protocol
 import cv2
 
 from footballmatch_api.cv.detector import Detection
+from footballmatch_api.cv.team_classifier import (
+    aggregate_track_features,
+    calculate_team_clustering_quality,
+    cluster_tracks_into_teams,
+    count_tracks_by_team,
+    extract_jersey_feature,
+)
 from footballmatch_api.cv.video import (
     VideoProcessingError,
     create_sampling_plan,
@@ -50,6 +57,15 @@ class AnalysisSummary:
     unique_tracks_by_label: dict[str, int] = field(
         default_factory=dict
     )
+    team_assignments: dict[str, int] = field(
+        default_factory=dict
+    )
+    team_counts: dict[str, int] = field(
+        default_factory=dict
+    )
+    team_feature_tracks: int = 0
+    team_classification_coverage: float = 0.0
+    team_silhouette_score: float | None = None
 
 
 def annotate_frame(
@@ -153,6 +169,7 @@ def analyze_video(
     #     "sports ball": {12},
     # }
     track_ids_by_label: dict[str, set[int]] = {}
+    jersey_samples_by_track: dict[int, list[Any]] = {}
 
     # Important: a new video must not inherit tracking state
     # from the previous video.
@@ -201,6 +218,24 @@ def analyze_video(
                     detection.track_id
                 )
 
+                if detection.label != "person":
+                    continue
+
+                jersey_feature = extract_jersey_feature(
+                    frame,
+                    detection,
+                )
+
+                if jersey_feature is None:
+                    continue
+
+                jersey_samples_by_track.setdefault(
+                    detection.track_id,
+                    [],
+                ).append(
+                    jersey_feature
+                )
+
     finally:
         writer.release()
 
@@ -209,6 +244,37 @@ def analyze_video(
         for label, track_ids
         in track_ids_by_label.items()
     }
+
+    track_features = aggregate_track_features(
+        jersey_samples_by_track
+    )
+
+    team_assignments = cluster_tracks_into_teams(
+        track_features
+    )
+
+    team_counts = count_tracks_by_team(
+        team_assignments
+    )
+
+    person_tracks = unique_tracks_by_label.get(
+        "person",
+        0,
+    )
+
+    team_classification_coverage = (
+        len(team_assignments)
+        / person_tracks
+        if person_tracks > 0
+        else 0.0
+    )
+
+    team_silhouette_score = (
+        calculate_team_clustering_quality(
+            track_features,
+            team_assignments,
+        )
+    )
 
     return AnalysisSummary(
         input_path=str(input_path),
@@ -222,4 +288,13 @@ def analyze_video(
         total_seconds=perf_counter() - started_at,
         duration_seconds=metadata.duration_seconds,
         unique_tracks_by_label=unique_tracks_by_label,
+        team_assignments={
+            str(track_id): team_id
+            for track_id, team_id
+            in team_assignments.items()
+        },
+        team_counts=team_counts,
+        team_feature_tracks=len(track_features),
+        team_classification_coverage=team_classification_coverage,
+        team_silhouette_score=team_silhouette_score,
     )
