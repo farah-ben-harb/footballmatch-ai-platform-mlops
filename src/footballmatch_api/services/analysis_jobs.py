@@ -73,6 +73,7 @@ class AnalysisJobService:
         self._jobs: dict[str, AnalysisJob] = {}
         self._lock = Lock()
         self._model_lock = Lock()
+        self._inference_lock = Lock()
         self._detector: YoloDetector | None = None
 
     def save_upload(
@@ -153,13 +154,14 @@ class AnalysisJobService:
             output_directory.mkdir(parents=True, exist_ok=True)
             detector = self._get_detector()
 
-            summary = self._pipeline(
-                job.input_path,
-                output_path,
-                detector,
-                target_fps=job.sample_fps,
-                confidence_threshold=job.confidence_threshold,
-            )
+            with self._inference_lock:
+                summary = self._pipeline(
+                    job.input_path,
+                    output_path,
+                    detector,
+                    target_fps=job.sample_fps,
+                    confidence_threshold=job.confidence_threshold,
+                )
 
             summary_path.write_text(
                 json.dumps(asdict(summary), indent=2),

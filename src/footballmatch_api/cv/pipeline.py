@@ -1,7 +1,7 @@
 """Streaming computer-vision pipeline for football match videos."""
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Protocol
@@ -22,12 +22,15 @@ class Detector(Protocol):
 
     model_name: str
 
-    def detect(
+    def track(
         self,
         frame: Any,
         confidence_threshold: float | None = None,
     ) -> list[Detection]:
-        """Return detections for one frame."""
+        """Return tracked detections for one sequential frame."""
+
+    def reset_tracking(self) -> None:
+        """Reset tracking state before processing a new video."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,13 +47,16 @@ class AnalysisSummary:
     inference_seconds: float
     total_seconds: float
     duration_seconds: float = 0.0
+    unique_tracks_by_label: dict[str, int] = field(
+        default_factory=dict
+    )
 
 
 def annotate_frame(
     frame: Any,
     detections: list[Detection],
 ) -> Any:
-    """Draw labelled detection boxes on a copy of an OpenCV frame."""
+    """Draw labelled tracked detections on a copy of an OpenCV frame."""
 
     annotated = frame.copy()
 
@@ -66,8 +72,15 @@ def annotate_frame(
             else (0, 165, 255)
         )
 
+        track_suffix = (
+            f" #{detection.track_id}"
+            if detection.track_id is not None
+            else ""
+        )
+
         label = (
-            f"{detection.label} "
+            f"{detection.label}"
+            f"{track_suffix} "
             f"{detection.confidence:.2f}"
         )
 
@@ -100,7 +113,7 @@ def analyze_video(
     target_fps: float = 5.0,
     confidence_threshold: float | None = None,
 ) -> AnalysisSummary:
-    """Run sampled inference and write an annotated MP4 output video."""
+    """Run tracked inference and write an annotated MP4 output video."""
 
     metadata = read_video_metadata(input_path)
 
@@ -134,6 +147,17 @@ def analyze_video(
 
     detection_counts: Counter[str] = Counter()
 
+    # Example:
+    # {
+    #     "person": {1, 4, 7},
+    #     "sports ball": {12},
+    # }
+    track_ids_by_label: dict[str, set[int]] = {}
+
+    # Important: a new video must not inherit tracking state
+    # from the previous video.
+    detector.reset_tracking()
+
     try:
         for _, frame in iter_sampled_frames(
             input_path,
@@ -141,7 +165,7 @@ def analyze_video(
         ):
             inference_started_at = perf_counter()
 
-            detections = detector.detect(
+            detections = detector.track(
                 frame,
                 confidence_threshold=confidence_threshold,
             )
@@ -165,8 +189,26 @@ def analyze_video(
                 for detection in detections
             )
 
+            # Collect unique tracking IDs by object class.
+            for detection in detections:
+                if detection.track_id is None:
+                    continue
+
+                track_ids_by_label.setdefault(
+                    detection.label,
+                    set(),
+                ).add(
+                    detection.track_id
+                )
+
     finally:
         writer.release()
+
+    unique_tracks_by_label = {
+        label: len(track_ids)
+        for label, track_ids
+        in track_ids_by_label.items()
+    }
 
     return AnalysisSummary(
         input_path=str(input_path),
@@ -179,4 +221,5 @@ def analyze_video(
         inference_seconds=inference_seconds,
         total_seconds=perf_counter() - started_at,
         duration_seconds=metadata.duration_seconds,
+        unique_tracks_by_label=unique_tracks_by_label,
     )
