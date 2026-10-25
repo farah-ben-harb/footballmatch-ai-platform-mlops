@@ -165,6 +165,9 @@ class AnalysisJobService:
                 annotated_video_path=output_path,
                 tracking_uri=self.mlflow_tracking_uri,
                 experiment_name=self.mlflow_experiment_name,
+                job_id=job.id,
+                original_filename=job.original_filename,
+                device=detector.device,
             )
 
             with self._lock:

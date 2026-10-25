@@ -7,6 +7,7 @@ from footballmatch_api.services import analysis_jobs
 
 class FakeDetector:
     confidence_threshold = 0.25
+    device = "cpu"
 
 
 def test_save_upload_rejects_an_unsupported_extension(
