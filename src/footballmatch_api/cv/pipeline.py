@@ -43,6 +43,7 @@ class AnalysisSummary:
     detections_by_label: dict[str, int]
     inference_seconds: float
     total_seconds: float
+    duration_seconds: float = 0.0
 
 
 def annotate_frame(
@@ -177,4 +178,5 @@ def analyze_video(
         detections_by_label=dict(detection_counts),
         inference_seconds=inference_seconds,
         total_seconds=perf_counter() - started_at,
+        duration_seconds=metadata.duration_seconds,
     )

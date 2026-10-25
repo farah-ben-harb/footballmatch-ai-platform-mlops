@@ -75,4 +75,8 @@ def test_track_analysis_run_logs_parameters_metrics_and_artifacts(
     assert fake_mlflow.params["model_name"] == "yolo11n.pt"
     assert fake_mlflow.metrics is not None
     assert fake_mlflow.metrics["detections_person"] == 9
-    assert fake_mlflow.artifacts == [(str(summary_path), "run-output"), (str(output_path), "run-output")]
+    assert set(fake_mlflow.artifacts) == {
+        (str(summary_path), "run-output"),
+        (str(output_path), "run-output"),
+        (str(tmp_path / "model-and-run.json"), "metadata"),
+    }
