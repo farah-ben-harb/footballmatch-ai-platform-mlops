@@ -12,6 +12,41 @@ service:
 
 containerPort: 8000
 
+config:
+  runtimeDirectory: /app/runtime
+
+  mlflowTrackingUri: http://mlflow:5000
+
+  detectorModelUri: models:/FootballMatchYOLODetector@champion
+
+  rag:
+    autoIndex: "false"
+
+    database:
+      host: postgres
+      port: "5432"
+      name: football_rag
+      user: footballmatch
+
+    ollama:
+      url: http://ollama:11434
+      model: gemma3:1b
+
+    huggingFaceCache: /app/runtime/huggingface
+
+secret:
+  existingSecret: footballmatch-ai-secrets
+
+persistence:
+  enabled: true
+  mountPath: /app/runtime
+  size: 10Gi
+
+  accessModes:
+    - ReadWriteOnce
+
+  storageClass: ""
+
 resources:
   requests:
     cpu: "500m"

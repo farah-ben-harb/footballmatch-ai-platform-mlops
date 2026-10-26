@@ -3,6 +3,7 @@ kind: Deployment
 
 metadata:
   name: {{ include "footballmatch-ai.fullname" . }}
+
   labels:
     {{- include "footballmatch-ai.labels" . | nindent 4 }}
 
@@ -20,6 +21,9 @@ spec:
     metadata:
       labels:
         {{- include "footballmatch-ai.selectorLabels" . | nindent 8 }}
+
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
 
     spec:
       securityContext:
@@ -39,6 +43,19 @@ spec:
             - name: http
               containerPort: {{ .Values.containerPort }}
               protocol: TCP
+
+          envFrom:
+            - configMapRef:
+                name: {{ include "footballmatch-ai.fullname" . }}-config
+
+            {{- if .Values.secret.existingSecret }}
+            - secretRef:
+                name: {{ .Values.secret.existingSecret }}
+            {{- end }}
+
+          volumeMounts:
+            - name: runtime
+              mountPath: {{ .Values.persistence.mountPath }}
 
           {{- if .Values.livenessProbe.enabled }}
           livenessProbe:
@@ -66,3 +83,14 @@ spec:
 
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+
+      volumes:
+        - name: runtime
+
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "footballmatch-ai.fullname" . }}-runtime
+
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
