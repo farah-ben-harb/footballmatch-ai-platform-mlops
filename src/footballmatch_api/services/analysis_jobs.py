@@ -1,6 +1,7 @@
 """In-memory asynchronous job service for local video analysis."""
 
 import json
+import logging
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -17,6 +18,7 @@ from footballmatch_api.observability import (
     INFERENCE_DURATION,
     VIDEO_JOBS,
 )
+from footballmatch_api.rag.indexer import get_rag_indexer
 from footballmatch_api.schemas import JobResponse
 
 
@@ -34,6 +36,8 @@ class AnalysisJob:
     result: dict[str, object] | None = None
     mlflow_run_id: str | None = None
 
+
+logger = logging.getLogger(__name__)
 
 class AnalysisJobService:
     """Persist uploads locally and process one video in a daemon thread."""
@@ -174,6 +178,29 @@ class AnalysisJobService:
                 completed_job.mlflow_run_id = run_id
 
             VIDEO_JOBS.labels(status="completed").inc()
+
+            # Automatic RAG indexing is best-effort.
+            # A RAG failure must not fail the video analysis.
+            try:
+                rag_result = get_rag_indexer().index_analysis(
+                    asdict(summary),
+                    job_id=job_id,
+                    mlflow_run_id=run_id,
+                )
+
+                logger.info(
+                    "RAG indexing completed: "
+                    "job_id=%s document_id=%s chunks=%s",
+                    job_id,
+                    rag_result.document_id,
+                    rag_result.chunks_indexed,
+                )
+            except Exception:
+                logger.exception(
+                    "RAG indexing failed for job_id=%s; "
+                    "video analysis remains completed",
+                    job_id,
+                )
             FRAMES_PROCESSED.inc(summary.frames_processed)
             INFERENCE_DURATION.observe(summary.inference_seconds)
 

@@ -3,6 +3,7 @@
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 from footballmatch_api.rag.document_builder import (
@@ -136,3 +137,11 @@ def rag_indexer_from_env() -> RagIndexer:
         embedder=embedder,
         repository=repository,
     )
+
+
+@lru_cache(maxsize=1)
+def get_rag_indexer() -> RagIndexer:
+    """Return one lazily created production RAG indexer."""
+
+    return rag_indexer_from_env()
+
