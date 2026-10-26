@@ -18,7 +18,10 @@ from footballmatch_api.observability import (
     INFERENCE_DURATION,
     VIDEO_JOBS,
 )
-from footballmatch_api.rag.indexer import get_rag_indexer
+from footballmatch_api.rag.indexer import (
+    get_rag_indexer,
+    rag_auto_index_enabled,
+)
 from footballmatch_api.schemas import JobResponse
 
 
@@ -179,28 +182,28 @@ class AnalysisJobService:
 
             VIDEO_JOBS.labels(status="completed").inc()
 
-            # Automatic RAG indexing is best-effort.
-            # A RAG failure must not fail the video analysis.
-            try:
-                rag_result = get_rag_indexer().index_analysis(
-                    asdict(summary),
-                    job_id=job_id,
-                    mlflow_run_id=run_id,
-                )
+            # Automatic RAG indexing is optional and best-effort.
+            if rag_auto_index_enabled():
+                try:
+                    rag_result = get_rag_indexer().index_analysis(
+                        asdict(summary),
+                        job_id=job_id,
+                        mlflow_run_id=run_id,
+                    )
 
-                logger.info(
-                    "RAG indexing completed: "
-                    "job_id=%s document_id=%s chunks=%s",
-                    job_id,
-                    rag_result.document_id,
-                    rag_result.chunks_indexed,
-                )
-            except Exception:
-                logger.exception(
-                    "RAG indexing failed for job_id=%s; "
-                    "video analysis remains completed",
-                    job_id,
-                )
+                    logger.info(
+                        "RAG indexing completed: "
+                        "job_id=%s document_id=%s chunks=%s",
+                        job_id,
+                        rag_result.document_id,
+                        rag_result.chunks_indexed,
+                    )
+                except Exception:
+                    logger.exception(
+                        "RAG indexing failed for job_id=%s; "
+                        "video analysis remains completed",
+                        job_id,
+                    )
             FRAMES_PROCESSED.inc(summary.frames_processed)
             INFERENCE_DURATION.observe(summary.inference_seconds)
 

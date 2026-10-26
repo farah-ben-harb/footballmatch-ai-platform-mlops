@@ -139,6 +139,23 @@ def rag_indexer_from_env() -> RagIndexer:
     )
 
 
+
+def rag_auto_index_enabled() -> bool:
+    """Return whether automatic RAG indexing is enabled."""
+
+    value = os.getenv(
+        "FOOTBALLMATCH_RAG_AUTO_INDEX",
+        "false",
+    )
+
+    return value.strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 @lru_cache(maxsize=1)
 def get_rag_indexer() -> RagIndexer:
     """Return one lazily created production RAG indexer."""

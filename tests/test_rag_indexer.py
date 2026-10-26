@@ -112,3 +112,54 @@ def test_index_analysis() -> None:
     assert result.job_id == "job-123"
     assert result.chunks_indexed == 2
     assert result.embedding_dimensions == 3
+
+
+def test_rag_auto_index_disabled_by_default(
+    monkeypatch,
+) -> None:
+    from footballmatch_api.rag.indexer import (
+        rag_auto_index_enabled,
+    )
+
+    monkeypatch.delenv(
+        "FOOTBALLMATCH_RAG_AUTO_INDEX",
+        raising=False,
+    )
+
+    assert rag_auto_index_enabled() is False
+
+
+def test_rag_auto_index_enabled(
+    monkeypatch,
+) -> None:
+    from footballmatch_api.rag.indexer import (
+        rag_auto_index_enabled,
+    )
+
+    monkeypatch.setenv(
+        "FOOTBALLMATCH_RAG_AUTO_INDEX",
+        "true",
+    )
+
+    assert rag_auto_index_enabled() is True
+
+
+def test_rag_auto_index_accepts_common_true_values(
+    monkeypatch,
+) -> None:
+    from footballmatch_api.rag.indexer import (
+        rag_auto_index_enabled,
+    )
+
+    for value in (
+        "1",
+        "TRUE",
+        "yes",
+        "ON",
+    ):
+        monkeypatch.setenv(
+            "FOOTBALLMATCH_RAG_AUTO_INDEX",
+            value,
+        )
+
+        assert rag_auto_index_enabled() is True
