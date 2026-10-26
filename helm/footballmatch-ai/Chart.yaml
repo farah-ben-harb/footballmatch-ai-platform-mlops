@@ -1,0 +1,11 @@
+apiVersion: v2
+
+name: footballmatch-ai
+
+description: Helm chart for the FootballMatch AI Platform
+
+type: application
+
+version: 0.1.0
+
+appVersion: "0.1.0"
