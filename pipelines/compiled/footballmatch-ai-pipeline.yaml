@@ -1,0 +1,393 @@
+# PIPELINE DEFINITION
+# Name: footballmatch-ai-platform
+# Description: End-to-end orchestration of FootballMatch video analysis, MLflow tracking and RAG validation.
+# Inputs:
+#    api_url: str
+#    confidence_threshold: float [Default: 0.25]
+#    rag_limit: int [Default: 3.0]
+#    rag_question: str [Default: 'How many player tracks were detected?']
+#    sample_fps: float [Default: 2.0]
+#    upload_field: str [Default: 'file']
+#    video_url: str
+components:
+  comp-submit-analysis:
+    executorLabel: exec-submit-analysis
+    inputDefinitions:
+      parameters:
+        api_url:
+          parameterType: STRING
+        confidence_threshold:
+          defaultValue: 0.25
+          isOptional: true
+          parameterType: NUMBER_DOUBLE
+        sample_fps:
+          defaultValue: 2.0
+          isOptional: true
+          parameterType: NUMBER_DOUBLE
+        upload_field:
+          defaultValue: file
+          isOptional: true
+          parameterType: STRING
+        video_url:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        Output:
+          parameterType: STRING
+  comp-validate-analysis:
+    executorLabel: exec-validate-analysis
+    inputDefinitions:
+      parameters:
+        analysis_payload:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        Output:
+          parameterType: STRING
+  comp-validate-rag-indexing:
+    executorLabel: exec-validate-rag-indexing
+    inputDefinitions:
+      parameters:
+        api_url:
+          parameterType: STRING
+        job_id:
+          parameterType: STRING
+        limit:
+          defaultValue: 3.0
+          isOptional: true
+          parameterType: NUMBER_INTEGER
+        max_attempts:
+          defaultValue: 30.0
+          isOptional: true
+          parameterType: NUMBER_INTEGER
+        poll_seconds:
+          defaultValue: 2.0
+          isOptional: true
+          parameterType: NUMBER_INTEGER
+        question:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        Output:
+          parameterType: STRING
+  comp-wait-for-analysis:
+    executorLabel: exec-wait-for-analysis
+    inputDefinitions:
+      parameters:
+        api_url:
+          parameterType: STRING
+        job_id:
+          parameterType: STRING
+        max_attempts:
+          defaultValue: 300.0
+          isOptional: true
+          parameterType: NUMBER_INTEGER
+        poll_seconds:
+          defaultValue: 2.0
+          isOptional: true
+          parameterType: NUMBER_INTEGER
+    outputDefinitions:
+      parameters:
+        Output:
+          parameterType: STRING
+deploymentSpec:
+  executors:
+    exec-submit-analysis:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - submit_analysis
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'requests>=2.32,<3'\
+          \  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.17.3'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef submit_analysis(\n    api_url: str,\n    video_url: str,\n  \
+          \  confidence_threshold: float = 0.25,\n    sample_fps: float = 2.0,\n \
+          \   upload_field: str = \"file\",\n) -> str:\n    \"\"\"Download a video\
+          \ and submit it to FootballMatch FastAPI.\"\"\"\n\n    import tempfile\n\
+          \n    import requests\n\n    video_response = requests.get(\n        video_url,\n\
+          \        timeout=120,\n    )\n    video_response.raise_for_status()\n\n\
+          \    with tempfile.NamedTemporaryFile(\n        suffix=\".mp4\",\n    )\
+          \ as video_file:\n        video_file.write(\n            video_response.content\n\
+          \        )\n        video_file.flush()\n\n        with open(\n         \
+          \   video_file.name,\n            \"rb\",\n        ) as handle:\n      \
+          \      response = requests.post(\n                (\n                  \
+          \  api_url.rstrip(\"/\")\n                    + \"/analyze\"\n         \
+          \       ),\n                files={\n                    upload_field: (\n\
+          \                        \"match.mp4\",\n                        handle,\n\
+          \                        \"video/mp4\",\n                    )\n       \
+          \         },\n                data={\n                    \"confidence_threshold\"\
+          : str(\n                        confidence_threshold\n                 \
+          \   ),\n                    \"sample_fps\": str(\n                     \
+          \   sample_fps\n                    ),\n                },\n           \
+          \     timeout=120,\n            )\n\n    response.raise_for_status()\n\n\
+          \    payload = response.json()\n\n    job_id = (\n        payload.get(\"\
+          id\")\n        or payload.get(\"job_id\")\n    )\n\n    if not job_id:\n\
+          \        raise RuntimeError(\n            \"Analysis API did not return\
+          \ a job ID\"\n        )\n\n    print(\n        \"Submitted analysis job:\"\
+          ,\n        job_id,\n    )\n\n    return str(job_id)\n\n"
+        image: python:3.10-slim
+    exec-validate-analysis:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - validate_analysis
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.17.3'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef validate_analysis(\n    analysis_payload: str,\n) -> str:\n \
+          \   \"\"\"Validate the completed FootballMatch result.\"\"\"\n\n    import\
+          \ json\n\n    payload = json.loads(\n        analysis_payload\n    )\n\n\
+          \    if payload.get(\"status\") != \"completed\":\n        raise RuntimeError(\n\
+          \            \"Expected a completed analysis\"\n        )\n\n    result\
+          \ = payload.get(\n        \"result\"\n    )\n\n    if not result:\n    \
+          \    raise RuntimeError(\n            \"Completed analysis has no result\"\
+          \n        )\n\n    summary = {\n        \"job_id\": (\n            payload.get(\"\
+          id\")\n            or payload.get(\"job_id\")\n        ),\n        \"status\"\
+          : payload.get(\n            \"status\"\n        ),\n        \"mlflow_run_id\"\
+          : payload.get(\n            \"mlflow_run_id\"\n        ),\n        \"frames_processed\"\
+          : result.get(\n            \"frames_processed\"\n        ),\n    }\n\n \
+          \   print(\n        json.dumps(\n            summary,\n            indent=2,\n\
+          \        )\n    )\n\n    return json.dumps(\n        summary\n    )\n\n"
+        image: python:3.10-slim
+    exec-validate-rag-indexing:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - validate_rag_indexing
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'requests>=2.32,<3'\
+          \  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.17.3'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef validate_rag_indexing(\n    api_url: str,\n    job_id: str,\n\
+          \    question: str,\n    limit: int = 3,\n    poll_seconds: int = 2,\n \
+          \   max_attempts: int = 30,\n) -> str:\n    \"\"\"Verify that the new analysis\
+          \ became searchable through RAG.\"\"\"\n\n    import json\n    import time\n\
+          \n    import requests\n\n    endpoint = (\n        api_url.rstrip(\"/\"\
+          )\n        + \"/rag/ask\"\n    )\n\n    for attempt in range(\n        1,\n\
+          \        max_attempts + 1,\n    ):\n        response = requests.post(\n\
+          \            endpoint,\n            json={\n                \"question\"\
+          : question,\n                \"limit\": limit,\n            },\n       \
+          \     timeout=180,\n        )\n\n        response.raise_for_status()\n\n\
+          \        payload = response.json()\n\n        sources = payload.get(\n \
+          \           \"sources\",\n            [],\n        )\n\n        matching_sources\
+          \ = [\n            source\n            for source in sources\n         \
+          \   if str(\n                source.get(\"job_id\")\n            )\n   \
+          \         == str(job_id)\n        ]\n\n        if matching_sources:\n  \
+          \          print(\n                \"RAG validation succeeded \"\n     \
+          \           \"for job:\",\n                job_id,\n            )\n\n  \
+          \          print(\n                \"Answer:\",\n                payload.get(\n\
+          \                    \"answer\"\n                ),\n            )\n\n \
+          \           return json.dumps(\n                payload\n            )\n\
+          \n        print(\n            \"RAG document not ready yet. \"\n       \
+          \     \"Attempt:\",\n            attempt,\n        )\n\n        time.sleep(\n\
+          \            poll_seconds\n        )\n\n    raise RuntimeError(\n      \
+          \  \"The completed analysis did not \"\n        \"become searchable in RAG\"\
+          \n    )\n\n"
+        image: python:3.10-slim
+    exec-wait-for-analysis:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - wait_for_analysis
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'requests>=2.32,<3'\
+          \  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.17.3'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef wait_for_analysis(\n    api_url: str,\n    job_id: str,\n   \
+          \ poll_seconds: int = 2,\n    max_attempts: int = 300,\n) -> str:\n    \"\
+          \"\"Poll the asynchronous analysis job until completion.\"\"\"\n\n    import\
+          \ json\n    import time\n\n    import requests\n\n    endpoint = (\n   \
+          \     api_url.rstrip(\"/\")\n        + \"/jobs/\"\n        + job_id\n  \
+          \  )\n\n    for attempt in range(\n        1,\n        max_attempts + 1,\n\
+          \    ):\n        response = requests.get(\n            endpoint,\n     \
+          \       timeout=30,\n        )\n        response.raise_for_status()\n\n\
+          \        payload = response.json()\n\n        status = payload.get(\n  \
+          \          \"status\"\n        )\n\n        print(\n            \"Attempt\"\
+          ,\n            attempt,\n            \"status:\",\n            status,\n\
+          \        )\n\n        if status == \"completed\":\n            return json.dumps(\n\
+          \                payload\n            )\n\n        if status == \"failed\"\
+          :\n            raise RuntimeError(\n                \"Football analysis\
+          \ failed: \"\n                + str(\n                    payload.get(\n\
+          \                        \"error\",\n                        \"unknown error\"\
+          ,\n                    )\n                )\n            )\n\n        time.sleep(\n\
+          \            poll_seconds\n        )\n\n    raise TimeoutError(\n      \
+          \  \"Analysis job did not complete \"\n        \"within the configured polling\
+          \ window\"\n    )\n\n"
+        image: python:3.10-slim
+pipelineInfo:
+  description: End-to-end orchestration of FootballMatch video analysis, MLflow tracking
+    and RAG validation.
+  name: footballmatch-ai-platform
+root:
+  dag:
+    tasks:
+      submit-analysis:
+        cachingOptions: {}
+        componentRef:
+          name: comp-submit-analysis
+        inputs:
+          parameters:
+            api_url:
+              componentInputParameter: api_url
+            confidence_threshold:
+              componentInputParameter: confidence_threshold
+            sample_fps:
+              componentInputParameter: sample_fps
+            upload_field:
+              componentInputParameter: upload_field
+            video_url:
+              componentInputParameter: video_url
+        taskInfo:
+          name: submit-analysis
+      validate-analysis:
+        cachingOptions: {}
+        componentRef:
+          name: comp-validate-analysis
+        dependentTasks:
+        - wait-for-analysis
+        inputs:
+          parameters:
+            analysis_payload:
+              taskOutputParameter:
+                outputParameterKey: Output
+                producerTask: wait-for-analysis
+        taskInfo:
+          name: validate-analysis
+      validate-rag-indexing:
+        cachingOptions: {}
+        componentRef:
+          name: comp-validate-rag-indexing
+        dependentTasks:
+        - submit-analysis
+        - validate-analysis
+        inputs:
+          parameters:
+            api_url:
+              componentInputParameter: api_url
+            job_id:
+              taskOutputParameter:
+                outputParameterKey: Output
+                producerTask: submit-analysis
+            limit:
+              componentInputParameter: rag_limit
+            question:
+              componentInputParameter: rag_question
+        taskInfo:
+          name: validate-rag-indexing
+      wait-for-analysis:
+        cachingOptions: {}
+        componentRef:
+          name: comp-wait-for-analysis
+        dependentTasks:
+        - submit-analysis
+        inputs:
+          parameters:
+            api_url:
+              componentInputParameter: api_url
+            job_id:
+              taskOutputParameter:
+                outputParameterKey: Output
+                producerTask: submit-analysis
+        taskInfo:
+          name: wait-for-analysis
+  inputDefinitions:
+    parameters:
+      api_url:
+        parameterType: STRING
+      confidence_threshold:
+        defaultValue: 0.25
+        isOptional: true
+        parameterType: NUMBER_DOUBLE
+      rag_limit:
+        defaultValue: 3.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      rag_question:
+        defaultValue: How many player tracks were detected?
+        isOptional: true
+        parameterType: STRING
+      sample_fps:
+        defaultValue: 2.0
+        isOptional: true
+        parameterType: NUMBER_DOUBLE
+      upload_field:
+        defaultValue: file
+        isOptional: true
+        parameterType: STRING
+      video_url:
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.17.3

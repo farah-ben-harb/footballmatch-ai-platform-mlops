@@ -16,6 +16,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from footballmatch_api.config import settings
 from footballmatch_api.observability import HTTP_DURATION, HTTP_REQUESTS
+from footballmatch_api.rag.api import router as rag_router
 from footballmatch_api.schemas import JobAcceptedResponse, JobResponse
 from footballmatch_api.services.analysis_jobs import AnalysisJobService
 
@@ -23,6 +24,8 @@ app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
 )
+
+app.include_router(rag_router)
 
 analysis_jobs = AnalysisJobService(
     runtime_directory=Path(settings.runtime_directory),

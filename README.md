@@ -46,6 +46,17 @@ for MLflow metadata and a separate volume for artifacts. API job state is proces
 The platform configuration adds a Helm chart for the API, a Prometheus ServiceMonitor,
 a Grafana dashboard definition, and an Argo CD Application manifest.
 
+### Optional local RAG assistant
+
+The RAG extension converts completed analysis summaries into chunks, embeds them
+with a local sentence-transformers model, and stores 384-dimensional vectors in
+PostgreSQL with pgvector. `POST /rag/ask` retrieves relevant chunks and asks
+Ollama for an answer that includes source references. `GET /rag/status` shows
+configuration without loading the models. Automatic indexing is opt-in through
+`FOOTBALLMATCH_RAG_AUTO_INDEX`; the core video job remains successful if
+indexing fails. See [Phase 8](docs/phases/phase-08-rag-assistant.md) for design,
+validation scope, and limitations.
+
 ## Quick start
 
 Prerequisites: Git, Python 3.10, and FFmpeg/FFprobe on `PATH`. The Windows examples

@@ -29,3 +29,5 @@ mlruns/
 Thumbs.db
 .vscode/
 .idea/
+backups/
+compose.dev.yaml
