@@ -2,6 +2,7 @@
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from psycopg import OperationalError
 
 from footballmatch_api.rag.api import (
     get_rag_service,
@@ -65,6 +66,14 @@ class FailingRagService:
         raise RuntimeError(
             "Ollama unavailable"
         )
+
+
+class UnavailableDatabaseService:
+    """Fake database outage without leaking connection details."""
+
+    def ask(self, question: str, *, limit: int = 3) -> RagAnswer:
+        del question, limit
+        raise OperationalError("password and host should stay private")
 
 
 def create_test_client(
@@ -177,6 +186,15 @@ def test_ask_rag_returns_503_when_dependency_fails() -> None:
     assert response.json() == {
         "detail": "Ollama unavailable"
     }
+
+
+def test_ask_rag_returns_safe_503_when_database_is_unavailable() -> None:
+    client = create_test_client(UnavailableDatabaseService())
+
+    response = client.post("/rag/ask", json={"question": "test"})
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "RAG database unavailable"}
 
 
 def test_rag_status_does_not_load_service() -> None:

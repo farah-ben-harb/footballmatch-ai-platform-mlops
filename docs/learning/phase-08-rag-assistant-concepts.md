@@ -162,3 +162,42 @@ plane outside the small VM scope.
    successful video analysis into a failed job.
 9. **Is a compiled KFP YAML proof of execution?** No. It is only a workflow
    specification until run on a compatible control plane.
+
+## External services from a K3s Pod
+
+### Definition and why it exists
+
+A Pod has its own network namespace. A Compose service name resolves only on
+its Docker network, so a Pod needs a reachable address for PostgreSQL, MLflow,
+and Ollama. On this single-node VM, the Docker host bridge provides that path.
+
+### How it works and architecture position
+
+The database container exposes port 5432 through a host-bound port 15432.
+The binding defaults to loopback for safety; the VM's ignored `.env` chooses
+a host bridge address reachable from K3s. Helm stores non-secret endpoints in
+a ConfigMap and injects the database password from a Kubernetes Secret.
+The Pod connects to PostgreSQL, retrieves pgvector chunks, then calls Ollama.
+
+### Alternatives and production considerations
+
+Alternatives include a Kubernetes Service plus EndpointSlice for an external
+database, a stable DNS name, or moving PostgreSQL into Kubernetes. The bridge
+is the smallest demonstrable choice for this single-node VM. It is tied to
+the local host network and must be replaced for multi-node scheduling.
+A Kubernetes Secret is configuration separation, not encryption by itself;
+limit RBAC access and enable encryption at rest in a production cluster.
+A connection timeout prevents a dead network path from hanging the API;
+the API maps database connection errors to HTTP 503 without leaking details.
+
+### Interview questions and answers
+
+1. **Why did Compose DNS fail in K3s?** The Pod and Compose service are in
+   different network namespaces and DNS domains.
+2. **Why use a Secret?** It keeps the database password out of Helm values,
+   ConfigMaps, Git, and response bodies.
+3. **Why return 503 on a database outage?** The service is temporarily
+   unable to answer; callers can distinguish dependency failure.
+4. **Why add a connection timeout?** It bounds waiting on an unreachable host.
+5. **Why is a host bridge only a local solution?** It assumes one node and
+   host-specific networking; multi-node clusters need a stable endpoint.

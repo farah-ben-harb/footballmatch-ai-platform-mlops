@@ -7,6 +7,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-mlflow}
       POSTGRES_USER: ${POSTGRES_USER:-footballmatch}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports:
+      - "${POSTGRES_BIND_IP:-127.0.0.1}:15432:5432"
     volumes:
       - postgres-vector-data:/var/lib/postgresql/data
     healthcheck:
