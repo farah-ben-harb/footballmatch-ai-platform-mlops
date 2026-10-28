@@ -69,7 +69,7 @@ Helm lint, template rendering with monitoring on and off, and Kubernetes
 server-side dry-run passed. The manual GitHub Actions run
 [40714284652](https://github.com/farah-ben-harb/footballmatch-ai-platform-mlops/actions/runs/40714284652)
 passed test, secret scan, SAST, filesystem scan, and image publication.
-Live image pull and API smoke tests are pending package read access.
+Helm release revision 1 installed. The PVC bound successfully and the Service was created. The Pod remains in ImagePullBackOff because GHCR returned HTTP 403; API smoke tests require package read access.
 
 ## Tests executed
 
@@ -83,6 +83,8 @@ Helm rendering and API-server validation were the focused local tests.
 - `kubectl apply --dry-run=server`: ConfigMap, PVC, Service, and
   Deployment accepted.
 - GHCR feature image was published by the successful CI run.
+- Helm release revision 1 is deployed; the 10Gi local-path PVC is Bound.
+- Pod image pull failed with GHCR HTTP 403; root disk remained at 7.5 GiB free.
 
 ## Errors encountered
 
@@ -128,7 +130,7 @@ unmerged RAG branch. This keeps the PR diff focused.
 The `/ready` endpoint checks process readiness, not MLflow, database,
 Ollama, or model loading. Local-path storage is node-local and its size
 request is not a hard disk quota. RAG queries are not validated from K3s.
-The live API deploy remains pending the GHCR package access step.
+The release is installed, but its Pod cannot become Ready until the GHCR package access step is complete.
 
 ## Next phase
 
