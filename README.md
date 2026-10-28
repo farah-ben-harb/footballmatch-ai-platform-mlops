@@ -210,9 +210,50 @@ docker compose ps
 Compose publishes the API on port `8000` and MLflow on port `5000`; stop any native
 processes using these ports first. PostgreSQL has no published host port.
 For Windows, use a Docker host such as Docker Desktop with its WSL2 backend.
-Kubernetes packaging and GitOps configuration are detailed in
-[Phase 6](docs/phases/phase-06-kubernetes-observability.md) and
-[Phase 7](docs/phases/phase-07-gitops-argocd.md).
+
+### K3s deployment validated on the Ubuntu VM
+
+The single canonical Chart is `helm/footballmatch-ai-platform`. It runs one
+non-root API Pod with a ClusterIP Service, probes, resource limits, and a
+local-path PVC. PostgreSQL and MLflow remain in Docker Compose; the K3s API
+reaches MLflow through the VM host address. RAG auto-indexing is disabled in
+this K3s deployment until PostgreSQL has a secured network route.
+
+The GHCR package is private. Authorize `read:packages`, then create the
+`ghcr-pull` Secret from your operator machine. The helper reads the token on
+stdin and never stores it in Git or a shell argument:
+
+```powershell
+gh auth refresh --scopes read:packages
+$vm = "farahbenharb@192.168.17.165"  # replace with your SSH target
+gh auth token | ssh $vm 'cd ~/footballmatch-ai-platform-mlops && ./scripts/create_ghcr_pull_secret.sh footballmatch ghcr-pull farah-ben-harb'
+```
+
+The operator machine needs GitHub CLI and SSH; the VM needs `kubectl`. From
+the repository root on the VM, after publishing an image:
+
+```bash
+VM_IP=192.168.17.165  # replace with your reachable VM address
+IMAGE_SHA=9ebe1a9f3169e241ee7bcc36bdab518d4ada58ec  # replace with a published commit
+helm upgrade --install footballmatch helm/footballmatch-ai-platform \
+  --namespace footballmatch --create-namespace \
+  --set image.tag="sha-${IMAGE_SHA}" \
+  --set 'imagePullSecrets[0].name=ghcr-pull' \
+  --set-string config.mlflowTrackingUri="http://${VM_IP}:5000"
+kubectl rollout status deployment/footballmatch-footballmatch-ai-platform -n footballmatch
+kubectl get pods,svc,pvc -n footballmatch
+kubectl port-forward -n footballmatch svc/footballmatch-footballmatch-ai-platform 18000:8000
+```
+
+While the port-forward runs, call `http://127.0.0.1:18000/health`,
+`/ready`, and `/metrics` from another VM terminal. The validated deployment
+processed the 8.68-second sample clip, wrote an annotated MP4 to its PVC, and
+recorded a finished MLflow run. The PyTorch image took about 20 minutes to
+pull on this VM; check `df -h /` before adding more K3s workloads.
+
+Deployment details and evidence are in
+[Phase 6](docs/phases/phase-06-kubernetes-observability.md). The Argo CD
+configuration is described in [Phase 7](docs/phases/phase-07-gitops-argocd.md).
 
 ## Validation and security
 
@@ -227,7 +268,7 @@ Helm is required only for chart validation. On Linux, use `.venv/bin/python` and
 
 | Validation | Evidence |
 | --- | --- |
-| Application | 26 passing tests covering the API, jobs, video pipeline, tracking, and clustering |
+| Application | 44 passing tests in the feature-branch CI run, covering API, jobs, video pipeline, tracking, RAG, and clustering |
 | Video baseline | 190 sampled frames processed; annotated MP4 verified with FFprobe |
 | Experiment tracking | Recorded local run with parameters, metrics, metadata, and output artifacts |
 | Packaging | Successful Docker build and GHCR publication; Helm lint and template rendering pass |
@@ -235,7 +276,7 @@ Helm is required only for chart validation. On Linux, use `.venv/bin/python` and
 The [CI workflow](.github/workflows/ci.yml) runs Ruff, pytest, Gitleaks secret scanning,
 Semgrep SAST, a Docker build, and a blocking Trivy filesystem scan for dependency
 and infrastructure-as-code vulnerabilities. Image publication runs after successful
-checks on `main`. Trivy's filesystem scan is separate from a full container-image scan.
+checks on `main` or a manually dispatched feature-branch run. Trivy's filesystem scan is separate from a full container-image scan.
 
 Read [SECURITY.md](SECURITY.md) for operating guidance. The service targets a trusted
 local environment; add authentication, TLS, and network restrictions before external exposure.

@@ -4,46 +4,69 @@ metadata:
   name: {{ include "footballmatch.fullname" . }}
   labels:
     app.kubernetes.io/name: {{ include "footballmatch.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ include "footballmatch.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
   template:
     metadata:
       labels:
         app.kubernetes.io/name: {{ include "footballmatch.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 999
-        runAsGroup: 999
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: api
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           ports:
             - name: http
               containerPort: 8000
           envFrom:
             - configMapRef:
                 name: {{ include "footballmatch.fullname" . }}
+            {{- with .Values.secret.existingSecret }}
+            - secretRef:
+                name: {{ . }}
+            {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
             - name: runtime
-              mountPath: /app/runtime
+              mountPath: {{ .Values.persistence.mountPath }}
           livenessProbe:
             httpGet:
               path: /health
               port: http
-            initialDelaySeconds: 15
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
           readinessProbe:
             httpGet:
               path: /ready
               port: http
             initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
       volumes:
         - name: runtime
+          {{- if .Values.persistence.enabled }}
           persistentVolumeClaim:
             claimName: {{ include "footballmatch.fullname" . }}-runtime
+          {{- else }}
+          emptyDir: {}
+          {{- end }}

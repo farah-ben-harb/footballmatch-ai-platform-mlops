@@ -2,9 +2,20 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: {{ include "footballmatch.fullname" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "footballmatch.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
 data:
   FOOTBALLMATCH_ENVIRONMENT: {{ .Values.config.environment | quote }}
   FOOTBALLMATCH_MLFLOW_TRACKING_URI: {{ .Values.config.mlflowTrackingUri | quote }}
   FOOTBALLMATCH_MLFLOW_EXPERIMENT_NAME: {{ .Values.config.mlflowExperimentName | quote }}
   FOOTBALLMATCH_MAX_UPLOAD_SIZE_BYTES: {{ .Values.config.maxUploadSizeBytes | quote }}
-  FOOTBALLMATCH_RUNTIME_DIRECTORY: /app/runtime
+  FOOTBALLMATCH_RUNTIME_DIRECTORY: {{ .Values.persistence.mountPath | quote }}
+  FOOTBALLMATCH_RAG_AUTO_INDEX: {{ .Values.config.rag.autoIndex | quote }}
+  FOOTBALLMATCH_RAG_DB_HOST: {{ .Values.config.rag.database.host | quote }}
+  FOOTBALLMATCH_RAG_DB_PORT: {{ .Values.config.rag.database.port | quote }}
+  FOOTBALLMATCH_RAG_DB_NAME: {{ .Values.config.rag.database.name | quote }}
+  FOOTBALLMATCH_RAG_DB_USER: {{ .Values.config.rag.database.user | quote }}
+  FOOTBALLMATCH_OLLAMA_URL: {{ .Values.config.rag.ollama.url | quote }}
+  FOOTBALLMATCH_OLLAMA_MODEL: {{ .Values.config.rag.ollama.model | quote }}
+  HF_HOME: {{ .Values.config.rag.huggingFaceCache | quote }}
