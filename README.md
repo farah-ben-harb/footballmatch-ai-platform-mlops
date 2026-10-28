@@ -55,7 +55,9 @@ Ollama for an answer that includes source references. `GET /rag/status` shows
 configuration without loading the models. Automatic indexing is opt-in through
 `FOOTBALLMATCH_RAG_AUTO_INDEX`; the core video job remains successful if
 indexing fails. See [Phase 8](docs/phases/phase-08-rag-assistant.md) for design,
-validation scope, and limitations.
+validation scope, and limitations. The K3s deployment was also validated
+against external PostgreSQL/pgvector and Ollama: a Pod request returned a
+grounded answer with retrieved source passages.
 
 ## Quick start
 

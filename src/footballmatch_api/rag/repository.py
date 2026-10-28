@@ -61,7 +61,8 @@ class RagRepository:
         import psycopg
 
         return psycopg.connect(
-            **self.connection_parameters
+            **self.connection_parameters,
+            connect_timeout=5,
         )
 
     def upsert_document(

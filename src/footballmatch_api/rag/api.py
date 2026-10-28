@@ -5,6 +5,7 @@ from functools import lru_cache
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
+from psycopg import OperationalError
 from pydantic import BaseModel, Field
 
 from footballmatch_api.rag.embedding import SentenceTransformerEmbedder
@@ -152,6 +153,11 @@ def ask_rag(
             limit=request.limit,
         )
 
+    except OperationalError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="RAG database unavailable",
+        ) from exc
     except RuntimeError as exc:
         raise HTTPException(
             status_code=503,
