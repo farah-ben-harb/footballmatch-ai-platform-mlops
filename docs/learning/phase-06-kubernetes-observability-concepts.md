@@ -1,56 +1,193 @@
-# Concepts — Phase 06
+# Concepts  Phase 06: Kubernetes deployment
 
-## Kubernetes and Helm
+## Mental model / workflow
 
-### Definition
+```mermaid
+flowchart LR
+  Git[Git commit SHA] --> CI[GitHub Actions]
+  CI --> GHCR[GHCR image]
+  GHCR --> Pod[API Pod on K3s]
+  Helm[Helm chart and values] --> Deployment
+  Deployment --> Pod
+  Service --> Pod
+  Pod --> PVC[Local-path PVC]
+  Pod --> MLflow[MLflow on VM host]
+```
 
-Kubernetes schedules containers as Pods. A Deployment maintains replicas, a Service
-provides stable networking, and a PVC requests persistent storage. Helm packages and
-templates those resources.
+The API is the Kubernetes workload. PostgreSQL and MLflow remain in Docker Compose
+on the same VM for this phase. RAG automatic indexing is off until PostgreSQL
+has a deliberate, secured network path into the cluster.
 
-### Why it exists
-
-Containers alone do not provide scheduling, desired state, service discovery, or
-declarative upgrades.
-
-### Architecture position
-
-K3s hosts the workload; Helm renders application configuration.
-
-### Alternatives
-
-Compose is suitable for one host; raw YAML has less reuse; managed Kubernetes costs money.
-
-### Interview questions
-
-Deployment versus Pod? ConfigMap versus Secret? Liveness versus readiness?
-
-### Interview answers
-
-A Pod runs containers; a Deployment maintains desired Pods. ConfigMaps hold non-secret
-configuration; Secrets hold sensitive values. Liveness can restart a process; readiness
-removes an unready process from traffic.
-
-## Prometheus and Grafana
+## K3s and Kubernetes
 
 ### Definition
 
-Prometheus pulls labelled numeric series from `/metrics`; Grafana queries and visualizes them.
+Kubernetes is a reconciliation system: controllers compare declared desired state
+with observed cluster state and create or replace resources until they match.
+K3s packages the control plane and node components for a small cluster.
 
 ### Why it exists
 
-Metrics reveal traffic, latency, errors, and capacity trends across time, unlike isolated logs.
+A container runtime starts one container, but it does not maintain replicas,
+roll out changes, give stable service names, or schedule workloads by resources.
 
 ### How it works
 
-A ServiceMonitor selects an endpoint for Prometheus. The dashboard uses rates and
-histograms to show throughput, job outcomes, detections, and p95 inference time.
+The API server stores objects, the scheduler assigns Pods to nodes, and
+controllers keep Deployments and ReplicaSets at their desired replica count.
+Kubelet starts and probes the containers through containerd.
 
-### Interview questions
+### Architecture position and example
 
-Why metrics and not only logs? What is a histogram?
+One K3s node runs one FootballMatch API Pod. Docker Compose continues to run
+PostgreSQL and MLflow outside Kubernetes.
 
-### Interview answers
+### Alternatives, advantages, and limitations
 
-Metrics allow aggregation and alerting. A histogram counts observations in buckets,
-which allows percentile estimates such as p95 latency.
+Compose is simpler for one host but has no Kubernetes controller model.
+A managed cluster reduces control-plane operations but requires a provider.
+Single-node K3s has no high availability.
+
+### Production and security considerations
+
+Use RBAC, resource quotas, network policy where supported, image provenance,
+and backups. K3s here demonstrates deployment mechanics, not a highly
+available production cluster.
+
+## Deployment, Pod, ReplicaSet, and Service
+
+### Definition and why they exist
+
+A Pod is the schedulable unit containing the API container. A Deployment
+declares the desired number of Pods and creates ReplicaSets for revisions.
+A ClusterIP Service supplies a stable virtual IP and name for ready Pods.
+
+### How they work in this project
+
+The Deployment keeps one API Pod. Its selector and the Service selector use
+the same labels. The Service forwards port 8000 to the Pod's named HTTP port.
+A port-forward exposes that Service temporarily on the operator's machine.
+
+### Alternatives and limitations
+
+A StatefulSet gives stable Pod identities for stateful workloads; the API
+itself does not need one. NodePort or Ingress can expose traffic persistently,
+but port-forward is safer for a local demo. Job state remains in process memory,
+so a restart loses the job index. More replicas would route requests to
+different in-memory indexes; keep one replica until a durable queue and store exist.
+
+## Helm and immutable images
+
+### Definition and why they exist
+
+Helm renders Kubernetes YAML from a versioned chart and values, then records
+a release history. An immutable image tag identifies a build by commit SHA.
+
+### How they work in this project
+
+The single canonical chart is `helm/footballmatch-ai-platform`.
+`helm lint` checks chart structure; `helm template` shows the exact manifests;
+`helm upgrade --install` applies them. The deployed image uses a `sha-...`
+tag rather than a mutable `latest` tag.
+
+### Alternatives and common mistakes
+
+Raw YAML is straightforward but repeats configuration. Kustomize patches
+manifests without templates. Argo CD is a reconciler and can consume Helm;
+it is not another chart. A common mistake is changing `latest` without
+changing the Pod spec, so Kubernetes may keep the old image.
+
+## ConfigMap and Secret
+
+### Definition and why they exist
+
+A ConfigMap holds non-sensitive environment configuration. A Secret holds
+sensitive bytes, such as database passwords and registry credentials.
+
+### How they work in this project
+
+Helm renders API settings into a ConfigMap. The GHCR pull credential lives
+in a Kubernetes Secret created outside Git. The chart can reference another
+existing Secret for RAG database credentials when that integration is enabled.
+
+### Production and security considerations
+
+Kubernetes Secret is base64-encoded, not encrypted by default. Restrict RBAC,
+enable encryption at rest where needed, rotate credentials, and never commit
+Secret manifests containing real values. Avoid printing credentials in logs.
+
+## PV, PVC, StorageClass, and local-path
+
+### Definition and why they exist
+
+A PVC requests a volume; a PV is the actual volume satisfying that claim.
+A StorageClass defines how a provisioner creates PVs. K3s local-path creates
+node-local directories for claims.
+
+### How they work in this project
+
+The runtime PVC stores uploads and output files under `/app/runtime`.
+The Pod's `fsGroup` lets the non-root application write to that volume.
+
+### Alternatives and limitations
+
+`emptyDir` loses files when a Pod is removed. Network storage supports
+multi-node access but adds complexity. Local-path does not make data highly
+available and a 10Gi request is not necessarily a hard quota.
+
+## Liveness, readiness, requests, and limits
+
+### Definition and why they exist
+
+Liveness answers whether kubelet should restart a container. Readiness
+answers whether the Service should route traffic to it. Requests reserve
+scheduler capacity; limits cap CPU or memory use.
+
+### How they work in this project
+
+`/health` is the liveness endpoint and `/ready` is readiness.
+The API requests 500m CPU and 1Gi memory, with 2 CPU and 4Gi limits.
+
+### Limitations and common mistakes
+
+The current readiness endpoint checks process availability, not MLflow,
+PostgreSQL, model loading, or Ollama. Do not describe it as an end-to-end
+dependency probe. A tight memory limit can kill CPU inference with OOMKilled;
+watch real usage before tuning.
+
+## Commands to remember
+
+| Command | Role | When to use |
+| --- | --- | --- |
+| `kubectl get nodes` | Check node state | Before deployment |
+| `kubectl get pods,svc,pvc -n footballmatch` | See workload, routing, and storage | During validation |
+| `kubectl describe pod <name> -n footballmatch` | Read events and scheduling reasons | Pod stuck or failing |
+| `kubectl logs deployment/footballmatch-footballmatch-ai-platform -n footballmatch` | Read application logs | Startup or runtime failure |
+| `kubectl get events -n footballmatch --sort-by=.metadata.creationTimestamp` | Inspect recent cluster decisions | Image pull or volume failure |
+| `helm lint helm/footballmatch-ai-platform` | Validate chart structure | Before commit |
+| `helm template footballmatch helm/footballmatch-ai-platform` | Inspect rendered resources | Before applying |
+| `helm upgrade --install footballmatch helm/footballmatch-ai-platform -n footballmatch` | Reconcile release | Deployment and upgrade |
+| `kubectl port-forward -n footballmatch svc/footballmatch-footballmatch-ai-platform 18000:8000` | Access ClusterIP locally | API smoke test |
+
+## Interview questions and answers
+
+1. **Why a Deployment instead of a bare Pod?** A Deployment recreates failed
+   Pods and records rollout revisions.
+2. **Why a Service?** Pod IPs change; a Service provides stable routing to
+   Pods selected by labels.
+3. **Readiness versus liveness?** Readiness controls traffic; liveness
+   requests a restart.
+4. **ConfigMap versus Secret?** Both inject configuration, but Secrets are
+   intended for sensitive values and require tighter access controls.
+5. **Why one replica?** The job index is in memory and the PVC is node-local;
+   replicas would disagree about job state.
+6. **Why a PVC?** Uploads and outputs must survive a Pod replacement.
+7. **What does a StorageClass do?** It selects the provisioner and policy
+   used to create storage for a PVC.
+8. **Why a SHA image tag?** It identifies the exact build for audit and
+   rollback.
+9. **Helm versus Argo CD?** Helm packages and renders a release; Argo CD
+   compares Git with the cluster and continuously syncs the desired state.
+10. **What changes in a multi-node production cluster?** Use durable shared
+    job state, a queue, multi-node storage, network policies, and a highly
+    available database and control plane.
