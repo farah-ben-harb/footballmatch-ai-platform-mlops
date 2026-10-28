@@ -155,6 +155,30 @@ PostgreSQL, model loading, or Ollama. Do not describe it as an end-to-end
 dependency probe. A tight memory limit can kill CPU inference with OOMKilled;
 watch real usage before tuning.
 
+## Networking between K3s and Docker Compose
+
+### Definition and why it exists
+
+Kubernetes Service DNS resolves only Services in the cluster. Docker Compose
+service names resolve only on their Compose network. A Pod therefore cannot
+assume that `mlflow`, `postgres`, or `ollama` are Kubernetes DNS names merely
+because those containers run on the same VM.
+
+### How it works in this project
+
+Compose publishes MLflow on the VM's port 5000. The API Pod uses a
+non-secret ConfigMap setting pointing to the VM address and port. A temporary
+BusyBox Pod confirmed that `/health` returned `OK` from MLflow. PostgreSQL
+has no published host port, so RAG indexing stays disabled in K3s.
+
+### Alternatives and production considerations
+
+The services could be moved into Kubernetes, reached through secured
+host-published ports, or placed behind a controlled in-cluster proxy.
+For this small VM, keeping the existing database and MLflow in Compose avoids
+duplicating large stateful services. In production, use private networking,
+authentication, TLS, and a stable service endpoint.
+
 ## Commands to remember
 
 | Command | Role | When to use |
