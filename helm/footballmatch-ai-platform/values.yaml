@@ -1,38 +1,68 @@
 replicaCount: 1
 
 image:
-  repository: footballmatch-api
-  tag: latest
+  repository: ghcr.io/farah-ben-harb/footballmatch-ai-platform-mlops
+  tag: sha-2cdaf1a5250c1511a3215fb8c11377db2fecdf7b
   pullPolicy: IfNotPresent
+imagePullSecrets: []
 
 service:
   type: ClusterIP
   port: 8000
 
-resources:
-  requests:
-    cpu: "500m"
-    memory: "1Gi"
-  limits:
-    cpu: "2"
-    memory: "3Gi"
-
 config:
   environment: k3s
-  mlflowTrackingUri: http://mlflow:5000
+  mlflowTrackingUri: ""
   mlflowExperimentName: football-video-analysis
   maxUploadSizeBytes: "100000000"
+  rag:
+    autoIndex: "false"
+    database:
+      host: ""
+      port: "5432"
+      name: football_rag
+      user: footballmatch
+    ollama:
+      url: ""
+      model: gemma3:1b
+    huggingFaceCache: /app/runtime/huggingface
+
+secret:
+  existingSecret: ""
 
 persistence:
+  enabled: true
+  mountPath: /app/runtime
   size: 10Gi
   storageClass: local-path
 
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: "2"
+    memory: 4Gi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 999
+  runAsGroup: 999
+  fsGroup: 999
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+
 serviceMonitor:
-  enabled: true
+  enabled: false
   interval: 30s
 
 grafanaDashboard:
-  enabled: true
+  enabled: false
 
 ingress:
   enabled: false
