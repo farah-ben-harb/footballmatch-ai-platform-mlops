@@ -2,7 +2,8 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/farah-ben-harb/footballmatch-ai-platform-mlops
-  tag: sha-2cdaf1a5250c1511a3215fb8c11377db2fecdf7b
+  tag: sha-ac041847ff90e40f62be4b969c50f4906e970a5d
+  digest: ""
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 
