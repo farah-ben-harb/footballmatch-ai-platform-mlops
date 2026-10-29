@@ -163,27 +163,25 @@ validation follows the API, PVC artifacts, and MLflow run end to end.
 
 ## Git / PR summary
 
-Work is on `feat/k8s-helm`, not directly on `main`. RAG was squash-merged
-into `main` through [PR #18](https://github.com/farah-ben-harb/footballmatch-ai-platform-mlops/pull/18).
+Work was done on `feat/k8s-helm`, not directly on `main`. RAG was
+squash-merged through [PR #18](https://github.com/farah-ben-harb/footballmatch-ai-platform-mlops/pull/18).
 The Kubernetes branch was rebased onto the new `main`; [PR #17](https://github.com/farah-ben-harb/footballmatch-ai-platform-mlops/pull/17)
-now targets `main`. `git range-diff` confirmed the six Kubernetes commits
-were preserved, and the PR diff contains only Kubernetes delivery changes.
+was merged into `main`. `git range-diff` confirmed the six Kubernetes
+commits were preserved, and the PR diff contained only Kubernetes changes.
 
 ## Limitations
 
 `/ready` checks process availability, not MLflow, PostgreSQL, Ollama, or
 model loading. Local-path storage is node-local and its 10Gi request is not a
 hard quota. Job state is process-local, so restarts lose the job index and
-multiple replicas are unsafe. RAG queries were not validated from K3s because
-PostgreSQL is not exposed there. About 4.0 GiB remains on `/`; move K3s image
-and monitoring data to `/data` or free space before pulling large observability
-and GitOps images.
+multiple replicas are unsafe. RAG queries were subsequently validated from
+K3s after exposing PostgreSQL on a restricted host bridge. The redundant Compose API image was removed to
+recover about 3.3 GiB on `/`. Monitoring data is placed on `/data`.
 
 ## Next phase
 
-Plan storage headroom first, then deploy Prometheus and Grafana. Enable the
-Chart's ServiceMonitor and dashboard only after the monitoring CRDs and
-stack exist.
+Use the small Compose Prometheus/Grafana overlay to scrape the K3s Service.
+Keep the Chart's ServiceMonitor disabled because no Operator is installed.
 
 ## How I would explain this phase in an interview
 
@@ -194,3 +192,90 @@ a private GHCR pull Secret created outside Git. I verified health, metrics,
 a real video job, the output MP4, and its MLflow run. I kept one replica because
 job state is currently in memory, and I measured disk headroom before adding
 more platform services."
+
+## Lightweight observability extension (2026-10-28)
+
+### Objective and starting state
+
+The K3s API exposed `/metrics`, but no collector or dashboard was running.
+The VM has two CPU cores, 12 GiB RAM, and a root filesystem that previously
+reached 100%. A separate `/data` filesystem had about 31 GiB free.
+
+### Architecture and implementation
+
+```text
+FastAPI Pod (K3s) -> ClusterIP Service -> Prometheus (Compose) -> Grafana (Compose)
+                           /metrics       /data TSDB              /data SQLite
+```
+
+A Compose-network container fetched the K3s Service's `/metrics` endpoint
+with HTTP 200. The overlay `compose.observability.yaml` therefore uses
+static scraping every 15 seconds, without NodePort or Prometheus Operator.
+Prometheus retains seven days or 2 GB of samples. Grafana provisions its
+Prometheus data source and the dashboard JSON stored in the Helm chart.
+The dashboard covers HTTP rate/errors/p95 latency, video jobs, frames,
+full job duration, inference, detections, and RAG request/error/retrieval/
+generation metrics. The optional ServiceMonitor remains disabled.
+
+Both web ports bind to VM loopback. Writable data directories under
+`/data/footballmatch-observability` belong to the containers' distinct UIDs.
+
+### Files added or modified
+
+- `compose.observability.yaml`: pinned monitoring images and resource limits.
+- `observability/prometheus/prometheus.yml`: static K3s Service target.
+- `observability/grafana/provisioning/`: data source and dashboard provider.
+- `helm/footballmatch-ai-platform/dashboards/footballmatch-api.json`:
+  twelve panels with explicit layout and data source.
+- `src/footballmatch_api/observability.py` and
+  `src/footballmatch_api/services/analysis_jobs.py`: full job duration
+  histogram measured for both completed and failed jobs.
+- `.env.example` and `README.md`: local configuration and runbook.
+
+### Commands executed and expected output
+
+| Command | Purpose | Important flags | Expected result |
+| --- | --- | --- | --- |
+| `free -h; df -h / /data` | Check capacity | None | RAM and both filesystems |
+| `kubectl get svc -n footballmatch` | Find scrape target | Namespace | API ClusterIP |
+| `docker compose -f compose.yaml -f compose.observability.yaml --profile observability config --quiet` | Validate model without printing secrets | `-f`, `--profile`, `--quiet` | Exit 0 |
+| `docker compose -f compose.yaml -f compose.observability.yaml --profile observability up -d prometheus grafana` | Start monitoring only | `-d` | Two running services |
+| `curl http://127.0.0.1:9090/api/v1/targets` | Inspect scrape health | Loopback | FootballMatch target UP |
+| `curl http://127.0.0.1:3000/api/health` | Check Grafana | Loopback | Database OK |
+
+The ignored local `.env` supplies the K3s Service IP and a random Grafana
+admin password. It is never committed. The monitoring directories were
+created on `/data` with UID 65534 for Prometheus and UID 472 for Grafana.
+
+### Runtime validation and evidence (2026-10-29)
+
+- The updated K3s API image `sha-6fdda75afd275c59f877b7c8716e8f632fadd98d`
+  is `1/1 Running`; Helm release revision 3 is `deployed`.
+- `GET /rag/status` and `POST /rag/ask` from that Pod returned HTTP 200.
+  The question about job `1302e0b0-0a22-452f-b43a-da0ca3409773`
+  returned `73` with three source passages. An isolated connection-refused
+  check returned safe HTTP 503 with `RAG database unavailable`.
+- Prometheus reports `up{job="footballmatch-k3s"} = 1`. After the real
+  question, it recorded one RAG request, one `/rag/ask` HTTP request, and
+  one retrieval and generation observation.
+- Grafana's HTTP API returned a provisioned Prometheus data source and the
+  FootballMatch dashboard with twelve panels. All twelve PromQL queries
+  were accepted by Prometheus.
+- `promtool check config` passed; `helm lint`, `helm template` with the
+  dashboard enabled, Compose configuration, Ruff, JSON structure, and
+  whitespace checks passed.
+- Docker inspect confirmed both monitoring data mounts point under
+  `/data/footballmatch-observability`. At validation time `/data` had
+  about 31 GiB available and `/` about 5 GiB.
+
+The new full video-job duration metric is in the feature branch and will
+appear after the next API image publication and a new analysis job.
+
+### Security and limitations
+
+Only an SSH tunnel exposes the web interfaces to the Windows workstation.
+These are local single-node monitoring services without high availability.
+If the K3s Service is recreated, refresh its IP in the ignored `.env` and
+recreate Prometheus. A dashboard does not replace alerting or model-quality
+monitoring. The next delivery block is GitOps reconciliation and a final
+end-to-end demo.
