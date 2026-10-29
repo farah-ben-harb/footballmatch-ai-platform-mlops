@@ -203,6 +203,29 @@ Kubernetes packaging and GitOps configuration are detailed in
 [Phase 6](docs/phases/phase-06-kubernetes-observability.md) and
 [Phase 7](docs/phases/phase-07-gitops-argocd.md).
 
+### Verified Azure demo deployment
+
+The API has also been validated as a public Azure Container App for portfolio
+demonstration. The deployment uses the immutable GitHub Container Registry image
+published from the validated commit and runs in the Consumption environment.
+
+- **Endpoint:** `https://footballmatch-api-demo2.nicewater-00626e15.francecentral.azurecontainerapps.io`
+- **Region:** France Central
+- **Image:** `ghcr.io/farah-ben-harb/footballmatch-ai-platform-mlops:sha-465b6d90c19bbe8f108375efb0bab452d4919226`
+- **Sizing:** 1 vCPU, 2 GiB memory, `minReplicas=0`, `maxReplicas=1`
+- **Health:** `/health`, `/ready`, `/metrics`, and `/docs` returned HTTP 200 during validation
+
+An end-to-end upload of the licensed football sample completed successfully with
+YOLO11n: 44 frames processed, 318 `person` detections, 63 `sports ball` detections,
+and an MLflow run ID returned by the API. The exact commands and evidence are in
+[Azure Container Apps deployment evidence](docs/deployment/azure-container-apps.md).
+
+This Azure deployment is a CPU demo environment, not a production multi-replica
+service: job state is process-local, outputs are written to ephemeral storage, and
+the MLflow demo backend uses SQLite in the container. Durable PostgreSQL-backed
+tracking, authentication, TLS policy, object storage, and queue-backed workers are
+required before exposing this pattern to production traffic.
+
 ## Validation and security
 
 ```powershell
@@ -253,6 +276,7 @@ docs/                   Implementation evidence and technical explanations
 
 - [Video baseline evidence](docs/phases/phase-02-cv-baseline.md)
 - [MLflow tracking evidence](docs/phases/phase-03-mlflow-tracking.md)
+- [Azure deployment evidence](docs/deployment/azure-container-apps.md)
 - [Implementation recaps](docs/phases/) and [concept guides](docs/learning/)
 - [Release checklist](docs/release/v0.1.0-checklist.md)
 

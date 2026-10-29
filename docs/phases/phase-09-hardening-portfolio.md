@@ -9,9 +9,12 @@ reviewable, and ready for portfolio evidence.
 
 - Reworked README around architecture, verified capabilities, run paths, limitations,
   testing, security, deployment, and documentation.
+- Added evidence for the verified Azure Container Apps demo, including the immutable
+  image reference, public health checks, completed YOLO analysis, metrics, and
+  scale-to-zero configuration.
 - Added a security policy and a release checklist with required evidence.
-- Kept claims constrained to validated local work; K3s runtime evidence is deliberately
-  still marked pending.
+- Kept claims constrained to validated local and Azure work; K3s, Grafana, and Argo CD
+  runtime evidence remains separate from the Azure demo and is not claimed as live there.
 - Presented the portfolio around the delivered local MVP, linked validation evidence,
   and documented operating scope. Deployment definitions are described as configuration
   assets, separately from application behaviour and measured results.
@@ -19,7 +22,10 @@ reviewable, and ready for portfolio evidence.
 ## Validation
 
 - Repository test/lint evidence is maintained by preceding phase validation.
-- The release is not tagged until the checklist passes on the local deployment environment.
+- Azure health, readiness, metrics, documentation, and end-to-end inference were
+  revalidated against the public Container App.
+- The release checklist still distinguishes the verified MVP from optional local
+  Compose/K3s/GitOps evidence that must be captured before claiming those runtimes.
 
 ## How I would explain this phase in an interview
 
