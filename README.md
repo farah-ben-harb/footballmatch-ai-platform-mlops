@@ -38,13 +38,17 @@ flowchart LR
     J --> M[MLflow experiment run]
     O --> M
     A --> P["/metrics"]
+    P --> PM[Prometheus]
+    PM --> GF[Grafana]
 ```
 
 Locally, MLflow stores runs in `mlruns/`. The Compose configuration uses PostgreSQL
 for MLflow metadata and a separate volume for artifacts. API job state is process-local.
 
-The platform configuration adds a Helm chart for the API, a Prometheus ServiceMonitor,
-a Grafana dashboard definition, and an Argo CD Application manifest.
+The platform configuration adds a Helm chart for the API, a lightweight
+Prometheus/Grafana Compose overlay, a versioned dashboard, and an Argo CD
+Application manifest. The optional ServiceMonitor is disabled because this VM
+does not run Prometheus Operator.
 
 ### Optional local RAG assistant
 
@@ -197,6 +201,7 @@ an MLflow run. Linux users can use the same arguments with `.venv/bin/python` an
 | --- | --- |
 | [Dockerfile](Dockerfile) | API image with FFmpeg and a non-root runtime user |
 | [Docker Compose](compose.yaml) | API, MLflow, PostgreSQL, and persistent volumes |
+| [Observability Compose overlay](compose.observability.yaml) | Lightweight Prometheus and Grafana with data on `/data` |
 | [Helm chart](helm/footballmatch-ai-platform) | API Deployment, Service, probes, resources, storage, and monitoring configuration |
 | [Grafana dashboard](helm/footballmatch-ai-platform/dashboards/footballmatch-api.json) | Dashboard definition for application metrics |
 | [Argo CD Application](gitops/argocd/footballmatch-application.yaml) | GitOps configuration with automated sync, self-healing, and a commit-SHA image tag |
@@ -210,7 +215,9 @@ docker compose ps
 ```
 
 Compose publishes the API on port `8000` and MLflow on port `5000`; stop any native
-processes using these ports first. PostgreSQL has no published host port.
+processes using these ports first. PostgreSQL binds port `15432` to loopback by
+default. The K3s VM can use an ignored local `.env` setting to bind this port to
+the host bridge for Pod access.
 For Windows, use a Docker host such as Docker Desktop with its WSL2 backend.
 
 ### K3s deployment validated on the Ubuntu VM
@@ -218,8 +225,9 @@ For Windows, use a Docker host such as Docker Desktop with its WSL2 backend.
 The single canonical Chart is `helm/footballmatch-ai-platform`. It runs one
 non-root API Pod with a ClusterIP Service, probes, resource limits, and a
 local-path PVC. PostgreSQL and MLflow remain in Docker Compose; the K3s API
-reaches MLflow through the VM host address. RAG auto-indexing is disabled in
-this K3s deployment until PostgreSQL has a secured network route.
+reaches MLflow through the VM host address. The validated RAG setup reaches
+PostgreSQL/pgvector and Ollama through the host bridge; the database password
+is injected from a Kubernetes Secret, and automatic indexing is enabled.
 
 The GHCR package is private. Authorize `read:packages`, then create the
 `ghcr-pull` Secret from your operator machine. The helper reads the token on
@@ -235,8 +243,8 @@ The operator machine needs GitHub CLI and SSH; the VM needs `kubectl`. From
 the repository root on the VM, after publishing an image:
 
 ```bash
-VM_IP=192.168.17.165  # replace with your reachable VM address
-IMAGE_SHA=9ebe1a9f3169e241ee7bcc36bdab518d4ada58ec  # replace with a published commit
+VM_IP=REPLACE_WITH_REACHABLE_VM_IP
+IMAGE_SHA="$(git rev-parse main)"  # use a main commit whose CI published the image
 helm upgrade --install footballmatch helm/footballmatch-ai-platform \
   --namespace footballmatch --create-namespace \
   --set image.tag="sha-${IMAGE_SHA}" \
@@ -257,6 +265,44 @@ Deployment details and evidence are in
 [Phase 6](docs/phases/phase-06-kubernetes-observability.md). The Argo CD
 configuration is described in [Phase 7](docs/phases/phase-07-gitops-argocd.md).
 
+### Lightweight Prometheus and Grafana
+
+The API exposes `/metrics`. A small Compose overlay scrapes the K3s Service
+directly from the same VM and provisions a Grafana dashboard. No Prometheus
+Operator is installed, so the optional Helm ServiceMonitor stays disabled.
+Prometheus and Grafana persist on `/data/footballmatch-observability`; their
+web ports bind only to VM loopback. The dashboard covers HTTP rate/errors/p95
+latency, video jobs/frames/duration, inference, detections, and RAG
+requests/errors/retrieval/generation latency.
+
+Set `K3S_API_SERVICE_IP` in the ignored `.env` to the output of
+`kubectl get svc footballmatch-footballmatch-ai-platform -n footballmatch -o jsonpath='{.spec.clusterIP}'`.
+Also set a random `GRAFANA_ADMIN_PASSWORD` there. Create writable
+`prometheus` (UID 65534) and `grafana` (UID 472) directories under
+`/data/footballmatch-observability`, then start only the monitoring services:
+
+```bash
+docker compose -f compose.yaml -f compose.observability.yaml --profile observability config --quiet
+docker compose -f compose.yaml -f compose.observability.yaml --profile observability up -d prometheus grafana
+```
+
+From Windows, keep a terminal open with this SSH tunnel (replace the VM
+username and address):
+
+```powershell
+ssh -L 3000:127.0.0.1:3000 -L 9090:127.0.0.1:9090 USER@VM_IP
+```
+
+Open http://127.0.0.1:3000 for Grafana and sign in as `admin` with the
+password from your local ignored `.env`. The FootballMatch dashboard is
+provisioned in the FootballMatch folder. Prometheus is available at
+http://127.0.0.1:9090.
+
+On the VM, Prometheus listens at `127.0.0.1:9090` and Grafana at
+`127.0.0.1:3000`. Use SSH port forwarding for access from Windows.
+The configured K3s Service IP is specific to this single-node VM and must be
+refreshed if the Service is recreated. See [Phase 6](docs/phases/phase-06-kubernetes-observability.md).
+
 ## Validation and security
 
 ```powershell
@@ -270,7 +316,7 @@ Helm is required only for chart validation. On Linux, use `.venv/bin/python` and
 
 | Validation | Evidence |
 | --- | --- |
-| Application | 44 passing tests in the feature-branch CI run, covering API, jobs, video pipeline, tracking, RAG, and clustering |
+| Application | CI tests cover API, jobs, video pipeline, tracking, RAG, and clustering |
 | Video baseline | 190 sampled frames processed; annotated MP4 verified with FFprobe |
 | Experiment tracking | Recorded local run with parameters, metrics, metadata, and output artifacts |
 | Packaging | Successful Docker build and GHCR publication; Helm lint and template rendering pass |

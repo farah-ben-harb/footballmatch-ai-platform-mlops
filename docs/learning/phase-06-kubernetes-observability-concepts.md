@@ -168,8 +168,8 @@ because those containers run on the same VM.
 
 Compose publishes MLflow on the VM's port 5000. The API Pod uses a
 non-secret ConfigMap setting pointing to the VM address and port. A temporary
-BusyBox Pod confirmed that `/health` returned `OK` from MLflow. PostgreSQL
-has no published host port, so RAG indexing stays disabled in K3s.
+BusyBox Pod confirmed that `/health` returned `OK` from MLflow. PostgreSQL is now bound to a host bridge address on port 15432, so the
+K3s Pod can retrieve pgvector chunks without moving the database.
 
 ### Alternatives and production considerations
 
@@ -215,3 +215,70 @@ authentication, TLS, and a stable service endpoint.
 10. **What changes in a multi-node production cluster?** Use durable shared
     job state, a queue, multi-node storage, network policies, and a highly
     available database and control plane.
+
+## Prometheus scraping and Grafana dashboards
+
+### Definition and why they exist
+
+Prometheus is a time-series monitoring system. It periodically scrapes
+`/metrics`, stores timestamped samples, and evaluates PromQL queries.
+Grafana displays those queries as panels. This separates metric collection
+from visualization and lets engineers inspect trends rather than isolated logs.
+
+### How they work in FootballMatch
+
+The API exposes counters (HTTP requests, jobs, frames, detections, RAG
+requests/errors) and histograms (HTTP latency, full video-job duration,
+inference, retrieval, and generation). Prometheus in Docker Compose scrapes
+the stable K3s Service IP through the VM's local routing. Grafana uses a
+provisioned Prometheus data source and a versioned dashboard JSON file.
+The dashboard is read-only from Git, while Grafana's database persists on
+`/data`. Both web interfaces bind to loopback for SSH-tunnel access.
+
+### Alternatives, advantages, and limitations
+
+A Prometheus Operator with ServiceMonitor is useful in a larger cluster,
+but adds controllers and CRDs to this two-CPU VM. Static scraping in Compose
+is sufficient for one API target. The Service IP can change if recreated;
+refresh the ignored `.env` setting then recreate Prometheus. Local storage
+does not provide high availability. Seven-day and 2 GB Prometheus retention
+limits data growth; `/data` capacity still needs monitoring.
+
+### Security and common mistakes
+
+Keep Grafana's admin password in ignored local configuration. Bind admin
+ports to loopback. Never enable a ServiceMonitor without its CRD/operator.
+A counter's raw value is cumulative; use `rate()` for per-second traffic and
+`increase()` for counts over an interval. Histograms provide bucketed
+latency distributions; p95 requires `histogram_quantile()` over bucket
+rates. A successful `/metrics` HTTP response alone does not prove that
+Prometheus scraped it; query `up{job="footballmatch-k3s"}`.
+
+### Interview questions and answers
+
+1. **Prometheus versus Grafana?** Prometheus collects and queries metrics;
+   Grafana visualizes those queries.
+2. **Why scrape a Service instead of a Pod IP?** The Service remains stable
+   across Pod replacements.
+3. **What does `up=1` mean?** The latest scrape succeeded; it does not prove
+   every application operation is healthy.
+4. **Counter versus histogram?** A counter grows monotonically; a histogram
+   records observations into buckets plus sum and count.
+5. **Why retain only seven days?** It limits disk use on this local VM.
+6. **Why no ServiceMonitor?** No Prometheus Operator is installed; static
+   scraping needs no CRD.
+7. **Why keep monitoring data on `/data`?** The root filesystem has little
+   free space and previously entered DiskPressure.
+8. **How do you measure p95 latency?** Aggregate bucket rates by `le`
+   and apply `histogram_quantile(0.95, ...)`.
+
+### Commands to remember for this extension
+
+| Command | Role | When to use |
+| --- | --- | --- |
+| `docker compose -f compose.yaml -f compose.observability.yaml --profile observability config --quiet` | Check combined configuration without printing passwords | Before startup or after edits |
+| `docker compose -f compose.yaml -f compose.observability.yaml --profile observability up -d prometheus grafana` | Start only the monitoring services | After storage and environment setup |
+| `kubectl get svc -n footballmatch` | Discover the K3s scrape endpoint | When Service IP changes |
+| `curl http://127.0.0.1:9090/api/v1/targets` | Check target health | After Prometheus starts |
+| `curl http://127.0.0.1:3000/api/health` | Check Grafana process and database | After Grafana starts |
+| `df -h / /data` | Check image and TSDB storage headroom | Before and after a rollout |
