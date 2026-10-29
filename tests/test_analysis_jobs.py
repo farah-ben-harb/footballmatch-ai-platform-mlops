@@ -1,6 +1,8 @@
 from io import BytesIO
 from pathlib import Path
 
+from prometheus_client import REGISTRY
+
 from footballmatch_api.cv.pipeline import AnalysisSummary
 from footballmatch_api.services import analysis_jobs
 
@@ -102,7 +104,15 @@ def test_run_uses_job_parameters_and_reuses_detector(
         sample_fps=3.0,
     )
 
+    before = REGISTRY.get_sample_value(
+        "footballmatch_video_analysis_duration_seconds_count"
+    ) or 0
     service.run(job.id)
+    after = REGISTRY.get_sample_value(
+        "footballmatch_video_analysis_duration_seconds_count"
+    )
+
+    assert after == before + 1
 
     completed = service.get(job.id)
 
@@ -148,7 +158,15 @@ def test_run_records_pipeline_failures(
         BytesIO(b"video"),
     )
 
+    before = REGISTRY.get_sample_value(
+        "footballmatch_video_analysis_duration_seconds_count"
+    ) or 0
     service.run(job.id)
+    after = REGISTRY.get_sample_value(
+        "footballmatch_video_analysis_duration_seconds_count"
+    )
+
+    assert after == before + 1
 
     failed = service.get(job.id)
 

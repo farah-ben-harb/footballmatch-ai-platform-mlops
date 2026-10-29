@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from threading import Lock, Thread
+from time import perf_counter
 from typing import BinaryIO, ClassVar
 from uuid import uuid4
 
@@ -16,6 +17,7 @@ from footballmatch_api.observability import (
     DETECTIONS,
     FRAMES_PROCESSED,
     INFERENCE_DURATION,
+    VIDEO_ANALYSIS_DURATION,
     VIDEO_JOBS,
 )
 from footballmatch_api.rag.indexer import (
@@ -139,6 +141,7 @@ class AnalysisJobService:
     def run(self, job_id: str) -> None:
         """Execute inference, persist outputs, and transition the job state."""
 
+        started_at = perf_counter()
         job = self._get_internal(job_id)
         self._set_status(job_id, "running")
 
@@ -146,9 +149,8 @@ class AnalysisJobService:
         output_path = output_directory / "annotated.mp4"
         summary_path = output_directory / "summary.json"
 
-        output_directory.mkdir(parents=True, exist_ok=True)
-
         try:
+            output_directory.mkdir(parents=True, exist_ok=True)
             detector = self._get_detector()
 
             summary = self._pipeline(
@@ -217,6 +219,9 @@ class AnalysisJobService:
                 failed_job.error = str(error)
 
             VIDEO_JOBS.labels(status="failed").inc()
+
+        finally:
+            VIDEO_ANALYSIS_DURATION.observe(perf_counter() - started_at)
 
     def get(self, job_id: str) -> JobResponse | None:
         """Return a public snapshot of a job, if it exists."""

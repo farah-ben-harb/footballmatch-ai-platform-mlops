@@ -30,3 +30,8 @@ INFERENCE_DURATION = Histogram(
     "footballmatch_inference_duration_seconds",
     "Total model inference duration of a video analysis job.",
 )
+
+VIDEO_ANALYSIS_DURATION = Histogram(
+    "footballmatch_video_analysis_duration_seconds",
+    "End-to-end duration of a video analysis job, including optional indexing.",
+)
