@@ -5,8 +5,14 @@ analysis, and traceable MLflow experiments.
 
 [![CI](https://github.com/farah-ben-harb/footballmatch-ai-platform-mlops/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/farah-ben-harb/footballmatch-ai-platform-mlops/actions/workflows/ci.yml)
 
+[![Release](https://img.shields.io/github/v/release/farah-ben-harb/footballmatch-ai-platform-mlops?display_name=tag)](https://github.com/farah-ben-harb/footballmatch-ai-platform-mlops/releases)
+
 [Architecture](#architecture) · [Quick start](#quick-start) · [API](#api-reference) ·
 [Deployment](#deployment) · [Validation](#validation-and-security)
+
+## Project status
+
+**v0.1.0 — validated local MVP.** The `main` branch contains the working CPU-first application, test suite, container workflow, Kubernetes deployment, observability stack, and GitOps configuration. The platform was validated on a single-node K3s VM without paid cloud services. Optional RAG is included as a local extension; it is not required for the core video-analysis path.
 
 ## Overview
 
@@ -204,7 +210,7 @@ an MLflow run. Linux users can use the same arguments with `.venv/bin/python` an
 | [Observability Compose overlay](compose.observability.yaml) | Lightweight Prometheus and Grafana with data on `/data` |
 | [Helm chart](helm/footballmatch-ai-platform) | API Deployment, Service, probes, resources, storage, and monitoring configuration |
 | [Grafana dashboard](helm/footballmatch-ai-platform/dashboards/footballmatch-api.json) | Dashboard definition for application metrics |
-| [Argo CD Application](gitops/argocd/footballmatch-application.yaml) | GitOps configuration with automated sync, self-healing, and a commit-SHA image tag |
+| [Argo CD Application](gitops/argocd/footballmatch-application.yaml) | GitOps configuration with automated sync, self-healing, and an immutable OCI image digest |
 
 On a Docker host, copy `.env.example` to `.env` and replace the PostgreSQL password
 placeholder before starting the stack:
