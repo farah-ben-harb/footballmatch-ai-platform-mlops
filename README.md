@@ -65,7 +65,7 @@ grounded answer with retrieved source passages.
 
 ## Quick start
 
-Prerequisites: Git, Python 3.10, and FFmpeg/FFprobe on `PATH`. The Windows examples
+Prerequisites: Git, Python 3.12, and FFmpeg/FFprobe on `PATH`. The Windows examples
 use PowerShell 7 and the Python launcher (`py`). No GPU is required. The first
 inference downloads `yolo11n.pt`; later runs can reuse the cached weights.
 
@@ -81,7 +81,7 @@ cd football-match-ai-platform
 Windows / PowerShell 7:
 
 ```powershell
-py -3.10 -m venv .venv
+py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 $env:FOOTBALLMATCH_RUNTIME_DIRECTORY = "artifacts/runtime"
 .\.venv\Scripts\python.exe -m uvicorn footballmatch_api.main:app --host 127.0.0.1 --port 8000
@@ -91,7 +91,7 @@ $env:FOOTBALLMATCH_RUNTIME_DIRECTORY = "artifacts/runtime"
 <summary>Linux equivalent</summary>
 
 ```bash
-python3.10 -m venv .venv
+python3.12 -m venv .venv
 .venv/bin/python -m pip install -e ".[dev]"
 export FOOTBALLMATCH_RUNTIME_DIRECTORY=artifacts/runtime
 .venv/bin/python -m uvicorn footballmatch_api.main:app --host 127.0.0.1 --port 8000
@@ -324,9 +324,9 @@ Helm is required only for chart validation. On Linux, use `.venv/bin/python` and
 | Packaging | Successful Docker build and GHCR publication; Helm lint and template rendering pass |
 
 The [CI workflow](.github/workflows/ci.yml) runs Ruff, pytest, Gitleaks secret scanning,
-Semgrep SAST, a Docker build, and a blocking Trivy filesystem scan for dependency
-and infrastructure-as-code vulnerabilities. Image publication runs after successful
-checks on `main` or a manually dispatched feature-branch run. Trivy's filesystem scan is separate from a full container-image scan.
+Semgrep SAST, a Docker build, and blocking Trivy filesystem and container-image scans. Image publication runs only after
+successful checks on `main` and uses a commit-SHA tag; the published OCI digest is
+recorded in the workflow summary.
 
 Read [SECURITY.md](SECURITY.md) for operating guidance. The service targets a trusted
 local environment; add authentication, TLS, and network restrictions before external exposure.
