@@ -1,10 +1,12 @@
 """In-memory asynchronous job service for local video analysis."""
 
 import json
+import logging
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from threading import Lock, Thread
+from time import perf_counter
 from typing import BinaryIO, ClassVar
 from uuid import uuid4
 
@@ -15,7 +17,12 @@ from footballmatch_api.observability import (
     DETECTIONS,
     FRAMES_PROCESSED,
     INFERENCE_DURATION,
+    VIDEO_ANALYSIS_DURATION,
     VIDEO_JOBS,
+)
+from footballmatch_api.rag.indexer import (
+    get_rag_indexer,
+    rag_auto_index_enabled,
 )
 from footballmatch_api.schemas import JobResponse
 
@@ -27,16 +34,26 @@ class AnalysisJob:
     id: str
     original_filename: str
     input_path: Path
+    confidence_threshold: float = 0.25
+    sample_fps: float = 5.0
     status: str = "queued"
     error: str | None = None
     result: dict[str, object] | None = None
     mlflow_run_id: str | None = None
 
 
+logger = logging.getLogger(__name__)
+
 class AnalysisJobService:
     """Persist uploads locally and process one video in a daemon thread."""
 
-    allowed_extensions: ClassVar[set[str]] = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
+    allowed_extensions: ClassVar[set[str]] = {
+        ".mp4",
+        ".mov",
+        ".avi",
+        ".mkv",
+        ".webm",
+    }
 
     def __init__(
         self,
@@ -58,82 +75,163 @@ class AnalysisJobService:
         self._model_lock = Lock()
         self._detector: YoloDetector | None = None
 
-    def save_upload(self, filename: str, file_object: BinaryIO) -> AnalysisJob:
+    def save_upload(
+        self,
+        filename: str,
+        file_object: BinaryIO,
+        *,
+        confidence_threshold: float = 0.25,
+        sample_fps: float = 5.0,
+    ) -> AnalysisJob:
         """Validate and stream an uploaded video to the runtime directory."""
+
         safe_name = Path(filename).name
         extension = Path(safe_name).suffix.lower()
+
         if extension not in self.allowed_extensions:
-            raise ValueError("Only MP4, MOV, AVI, MKV, and WebM video files are accepted")
+            raise ValueError(
+                "Only MP4, MOV, AVI, MKV, and WebM video files are accepted"
+            )
 
         job_id = str(uuid4())
         input_directory = self.runtime_directory / "uploads" / job_id
         input_directory.mkdir(parents=True, exist_ok=True)
+
         input_path = input_directory / f"input{extension}"
         bytes_written = 0
+
         with input_path.open("wb") as destination:
             while chunk := file_object.read(1024 * 1024):
                 bytes_written += len(chunk)
+
                 if bytes_written > self.max_upload_size_bytes:
                     destination.close()
                     input_path.unlink(missing_ok=True)
-                    raise ValueError("Uploaded video exceeds the configured size limit")
+                    raise ValueError(
+                        "Uploaded video exceeds the configured size limit"
+                    )
+
                 destination.write(chunk)
 
-        job = AnalysisJob(id=job_id, original_filename=safe_name, input_path=input_path)
+        job = AnalysisJob(
+            id=job_id,
+            original_filename=safe_name,
+            input_path=input_path,
+            confidence_threshold=confidence_threshold,
+            sample_fps=sample_fps,
+        )
+
         with self._lock:
             self._jobs[job_id] = job
+
         VIDEO_JOBS.labels(status="accepted").inc()
+
         return job
 
     def start(self, job_id: str) -> None:
         """Run the job asynchronously after its upload has been persisted."""
-        Thread(target=self.run, args=(job_id,), daemon=True, name=f"analysis-{job_id}").start()
+
+        Thread(
+            target=self.run,
+            args=(job_id,),
+            daemon=True,
+            name=f"analysis-{job_id}",
+        ).start()
 
     def run(self, job_id: str) -> None:
         """Execute inference, persist outputs, and transition the job state."""
+
+        started_at = perf_counter()
         job = self._get_internal(job_id)
         self._set_status(job_id, "running")
+
         output_directory = self.runtime_directory / "jobs" / job_id
         output_path = output_directory / "annotated.mp4"
         summary_path = output_directory / "summary.json"
-        output_directory.mkdir(parents=True, exist_ok=True)
 
         try:
+            output_directory.mkdir(parents=True, exist_ok=True)
             detector = self._get_detector()
-            summary = self._pipeline(job.input_path, output_path, detector)
-            summary_path.write_text(json.dumps(asdict(summary), indent=2), encoding="utf-8")
+
+            summary = self._pipeline(
+                job.input_path,
+                output_path,
+                detector,
+                target_fps=job.sample_fps,
+                confidence_threshold=job.confidence_threshold,
+            )
+
+            summary_path.write_text(
+                json.dumps(asdict(summary), indent=2),
+                encoding="utf-8",
+            )
+
             run_id = track_analysis_run(
                 summary,
-                confidence_threshold=detector.confidence_threshold,
-                requested_sample_fps=5.0,
+                confidence_threshold=job.confidence_threshold,
+                requested_sample_fps=job.sample_fps,
                 summary_path=summary_path,
                 annotated_video_path=output_path,
                 tracking_uri=self.mlflow_tracking_uri,
                 experiment_name=self.mlflow_experiment_name,
             )
+
             with self._lock:
                 completed_job = self._jobs[job_id]
                 completed_job.status = "completed"
                 completed_job.result = asdict(summary)
                 completed_job.mlflow_run_id = run_id
+
             VIDEO_JOBS.labels(status="completed").inc()
+
+            # Automatic RAG indexing is optional and best-effort.
+            if rag_auto_index_enabled():
+                try:
+                    rag_result = get_rag_indexer().index_analysis(
+                        asdict(summary),
+                        job_id=job_id,
+                        mlflow_run_id=run_id,
+                    )
+
+                    logger.info(
+                        "RAG indexing completed: "
+                        "job_id=%s document_id=%s chunks=%s",
+                        job_id,
+                        rag_result.document_id,
+                        rag_result.chunks_indexed,
+                    )
+                except Exception:
+                    logger.exception(
+                        "RAG indexing failed for job_id=%s; "
+                        "video analysis remains completed",
+                        job_id,
+                    )
             FRAMES_PROCESSED.inc(summary.frames_processed)
             INFERENCE_DURATION.observe(summary.inference_seconds)
+
             for label, count in summary.detections_by_label.items():
                 DETECTIONS.labels(label=label).inc(count)
-        except Exception as error:  # noqa: BLE001 - a job must expose terminal failure state
+
+        except Exception as error:  # noqa: BLE001
             with self._lock:
                 failed_job = self._jobs[job_id]
                 failed_job.status = "failed"
                 failed_job.error = str(error)
+
             VIDEO_JOBS.labels(status="failed").inc()
+
+        finally:
+            VIDEO_ANALYSIS_DURATION.observe(perf_counter() - started_at)
 
     def get(self, job_id: str) -> JobResponse | None:
         """Return a public snapshot of a job, if it exists."""
+
         with self._lock:
             job = self._jobs.get(job_id)
+
             if job is None:
                 return None
+
             return JobResponse(
                 id=job.id,
                 status=job.status,  # type: ignore[arg-type]
@@ -145,9 +243,11 @@ class AnalysisJobService:
 
     def _get_detector(self) -> YoloDetector:
         """Load model weights once per process, not once per job or frame."""
+
         with self._model_lock:
             if self._detector is None:
                 self._detector = self._detector_factory()
+
             return self._detector
 
     def _get_internal(self, job_id: str) -> AnalysisJob:

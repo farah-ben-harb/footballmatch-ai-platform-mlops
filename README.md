@@ -5,8 +5,14 @@ analysis, and traceable MLflow experiments.
 
 [![CI](https://github.com/farah-ben-harb/footballmatch-ai-platform-mlops/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/farah-ben-harb/footballmatch-ai-platform-mlops/actions/workflows/ci.yml)
 
+[![Release](https://img.shields.io/github/v/release/farah-ben-harb/footballmatch-ai-platform-mlops?display_name=tag)](https://github.com/farah-ben-harb/footballmatch-ai-platform-mlops/releases)
+
 [Architecture](#architecture) · [Quick start](#quick-start) · [API](#api-reference) ·
 [Deployment](#deployment) · [Validation](#validation-and-security)
+
+## Project status
+
+**v0.1.0 — validated local MVP.** The `main` branch contains the working CPU-first application, test suite, container workflow, Kubernetes deployment, observability stack, and GitOps configuration. The platform was validated on a single-node K3s VM without paid cloud services. Optional RAG is included as a local extension; it is not required for the core video-analysis path.
 
 ## Overview
 
@@ -38,17 +44,34 @@ flowchart LR
     J --> M[MLflow experiment run]
     O --> M
     A --> P["/metrics"]
+    P --> PM[Prometheus]
+    PM --> GF[Grafana]
 ```
 
 Locally, MLflow stores runs in `mlruns/`. The Compose configuration uses PostgreSQL
 for MLflow metadata and a separate volume for artifacts. API job state is process-local.
 
-The platform configuration adds a Helm chart for the API, a Prometheus ServiceMonitor,
-a Grafana dashboard definition, and an Argo CD Application manifest.
+The platform configuration adds a Helm chart for the API, a lightweight
+Prometheus/Grafana Compose overlay, a versioned dashboard, and an Argo CD
+Application manifest. The optional ServiceMonitor is disabled because this VM
+does not run Prometheus Operator.
+
+### Optional local RAG assistant
+
+The RAG extension converts completed analysis summaries into chunks, embeds them
+with a local sentence-transformers model, and stores 384-dimensional vectors in
+PostgreSQL with pgvector. `POST /rag/ask` retrieves relevant chunks and asks
+Ollama for an answer that includes source references. `GET /rag/status` shows
+configuration without loading the models. Automatic indexing is opt-in through
+`FOOTBALLMATCH_RAG_AUTO_INDEX`; the core video job remains successful if
+indexing fails. See [Phase 8](docs/phases/phase-08-rag-assistant.md) for design,
+validation scope, and limitations. The K3s deployment was also validated
+against external PostgreSQL/pgvector and Ollama: a Pod request returned a
+grounded answer with retrieved source passages.
 
 ## Quick start
 
-Prerequisites: Git, Python 3.10, and FFmpeg/FFprobe on `PATH`. The Windows examples
+Prerequisites: Git, Python 3.12, and FFmpeg/FFprobe on `PATH`. The Windows examples
 use PowerShell 7 and the Python launcher (`py`). No GPU is required. The first
 inference downloads `yolo11n.pt`; later runs can reuse the cached weights.
 
@@ -64,7 +87,7 @@ cd football-match-ai-platform
 Windows / PowerShell 7:
 
 ```powershell
-py -3.10 -m venv .venv
+py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 $env:FOOTBALLMATCH_RUNTIME_DIRECTORY = "artifacts/runtime"
 .\.venv\Scripts\python.exe -m uvicorn footballmatch_api.main:app --host 127.0.0.1 --port 8000
@@ -74,7 +97,7 @@ $env:FOOTBALLMATCH_RUNTIME_DIRECTORY = "artifacts/runtime"
 <summary>Linux equivalent</summary>
 
 ```bash
-python3.10 -m venv .venv
+python3.12 -m venv .venv
 .venv/bin/python -m pip install -e ".[dev]"
 export FOOTBALLMATCH_RUNTIME_DIRECTORY=artifacts/runtime
 .venv/bin/python -m uvicorn footballmatch_api.main:app --host 127.0.0.1 --port 8000
@@ -184,9 +207,10 @@ an MLflow run. Linux users can use the same arguments with `.venv/bin/python` an
 | --- | --- |
 | [Dockerfile](Dockerfile) | API image with FFmpeg and a non-root runtime user |
 | [Docker Compose](compose.yaml) | API, MLflow, PostgreSQL, and persistent volumes |
+| [Observability Compose overlay](compose.observability.yaml) | Lightweight Prometheus and Grafana with data on `/data` |
 | [Helm chart](helm/footballmatch-ai-platform) | API Deployment, Service, probes, resources, storage, and monitoring configuration |
 | [Grafana dashboard](helm/footballmatch-ai-platform/dashboards/footballmatch-api.json) | Dashboard definition for application metrics |
-| [Argo CD Application](gitops/argocd/footballmatch-application.yaml) | GitOps configuration with automated sync, self-healing, and a commit-SHA image tag |
+| [Argo CD Application](gitops/argocd/footballmatch-application.yaml) | GitOps configuration with automated sync, self-healing, and an immutable OCI image digest |
 
 On a Docker host, copy `.env.example` to `.env` and replace the PostgreSQL password
 placeholder before starting the stack:
@@ -197,11 +221,95 @@ docker compose ps
 ```
 
 Compose publishes the API on port `8000` and MLflow on port `5000`; stop any native
-processes using these ports first. PostgreSQL has no published host port.
+processes using these ports first. PostgreSQL binds port `15432` to loopback by
+default. The K3s VM can use an ignored local `.env` setting to bind this port to
+the host bridge for Pod access.
 For Windows, use a Docker host such as Docker Desktop with its WSL2 backend.
-Kubernetes packaging and GitOps configuration are detailed in
-[Phase 6](docs/phases/phase-06-kubernetes-observability.md) and
-[Phase 7](docs/phases/phase-07-gitops-argocd.md).
+
+### K3s deployment validated on the Ubuntu VM
+
+The single canonical Chart is `helm/footballmatch-ai-platform`. It runs one
+non-root API Pod with a ClusterIP Service, probes, resource limits, and a
+local-path PVC. PostgreSQL and MLflow remain in Docker Compose; the K3s API
+reaches MLflow through the VM host address. The validated RAG setup reaches
+PostgreSQL/pgvector and Ollama through the host bridge; the database password
+is injected from a Kubernetes Secret, and automatic indexing is enabled.
+
+The GHCR package is private. Authorize `read:packages`, then create the
+`ghcr-pull` Secret from your operator machine. The helper reads the token on
+stdin and never stores it in Git or a shell argument:
+
+```powershell
+gh auth refresh --scopes read:packages
+$vm = "farahbenharb@192.168.17.165"  # replace with your SSH target
+gh auth token | ssh $vm 'cd ~/footballmatch-ai-platform-mlops && ./scripts/create_ghcr_pull_secret.sh footballmatch ghcr-pull farah-ben-harb'
+```
+
+The operator machine needs GitHub CLI and SSH; the VM needs `kubectl`. From
+the repository root on the VM, after publishing an image:
+
+```bash
+VM_IP=REPLACE_WITH_REACHABLE_VM_IP
+IMAGE_SHA="$(git rev-parse main)"  # use a main commit whose CI published the image
+helm upgrade --install footballmatch helm/footballmatch-ai-platform \
+  --namespace footballmatch --create-namespace \
+  --set image.tag="sha-${IMAGE_SHA}" \
+  --set 'imagePullSecrets[0].name=ghcr-pull' \
+  --set-string config.mlflowTrackingUri="http://${VM_IP}:5000"
+kubectl rollout status deployment/footballmatch-footballmatch-ai-platform -n footballmatch
+kubectl get pods,svc,pvc -n footballmatch
+kubectl port-forward -n footballmatch svc/footballmatch-footballmatch-ai-platform 18000:8000
+```
+
+While the port-forward runs, call `http://127.0.0.1:18000/health`,
+`/ready`, and `/metrics` from another VM terminal. The validated deployment
+processed the 8.68-second sample clip, wrote an annotated MP4 to its PVC, and
+recorded a finished MLflow run. The PyTorch image took about 20 minutes to
+pull on this VM; check `df -h /` before adding more K3s workloads.
+
+Deployment details and evidence are in
+[Phase 6](docs/phases/phase-06-kubernetes-observability.md). The Argo CD
+configuration is described in [Phase 7](docs/phases/phase-07-gitops-argocd.md).
+
+### Lightweight Prometheus and Grafana
+
+The API exposes `/metrics`. A small Compose overlay scrapes the K3s Service
+directly from the same VM and provisions a Grafana dashboard. No Prometheus
+Operator is installed, so the optional Helm ServiceMonitor stays disabled.
+Prometheus and Grafana persist on `/data/footballmatch-observability`; their
+web ports bind only to VM loopback. The dashboard covers HTTP rate/errors/p95
+latency, video jobs/frames/duration, inference, detections, and RAG
+requests/errors/retrieval/generation latency.
+
+Set `K3S_API_SERVICE_IP` in the ignored `.env` to the output of
+`kubectl get svc footballmatch-footballmatch-ai-platform -n footballmatch -o jsonpath='{.spec.clusterIP}'`.
+Also set a random `GRAFANA_ADMIN_PASSWORD` there. Create writable
+`prometheus` (UID 65534) and `grafana` (UID 472) directories under
+`/data/footballmatch-observability`, then start only the monitoring services:
+
+```bash
+docker compose -f compose.yaml -f compose.observability.yaml --profile observability config --quiet
+docker compose -f compose.yaml -f compose.observability.yaml --profile observability up -d prometheus grafana
+```
+
+From Windows, keep a terminal open with this SSH tunnel (replace the VM
+username and address):
+
+```powershell
+ssh -L 3000:127.0.0.1:3000 -L 9090:127.0.0.1:9090 USER@VM_IP
+```
+
+Open http://127.0.0.1:3000 for Grafana and sign in as `admin` with the
+password from your local ignored `.env`. The FootballMatch dashboard is
+provisioned in the FootballMatch folder. Prometheus is available at
+http://127.0.0.1:9090.
+
+On the VM, Prometheus listens at `127.0.0.1:9090` and Grafana at
+`127.0.0.1:3000`. Use SSH port forwarding for access from Windows.
+The configured K3s Service IP is specific to this single-node VM and must be
+refreshed if the Service is recreated. A real 8.68-second K3s job populated the full
+video-duration metric, recorded a finished MLflow run, and wrote an annotated
+MP4 to the runtime PVC. See [Phase 6](docs/phases/phase-06-kubernetes-observability.md).
 
 ### Verified Azure demo deployment
 
@@ -239,15 +347,15 @@ Helm is required only for chart validation. On Linux, use `.venv/bin/python` and
 
 | Validation | Evidence |
 | --- | --- |
-| Application | 26 passing tests covering the API, jobs, video pipeline, tracking, and clustering |
+| Application | CI tests cover API, jobs, video pipeline, tracking, RAG, and clustering |
 | Video baseline | 190 sampled frames processed; annotated MP4 verified with FFprobe |
 | Experiment tracking | Recorded local run with parameters, metrics, metadata, and output artifacts |
 | Packaging | Successful Docker build and GHCR publication; Helm lint and template rendering pass |
 
 The [CI workflow](.github/workflows/ci.yml) runs Ruff, pytest, Gitleaks secret scanning,
-Semgrep SAST, a Docker build, and a blocking Trivy filesystem scan for dependency
-and infrastructure-as-code vulnerabilities. Image publication runs after successful
-checks on `main`. Trivy's filesystem scan is separate from a full container-image scan.
+Semgrep SAST, a Docker build, and blocking Trivy filesystem and container-image scans. Image publication runs only after
+successful checks on `main` and uses a commit-SHA tag; the published OCI digest is
+recorded in the workflow summary.
 
 Read [SECURITY.md](SECURITY.md) for operating guidance. The service targets a trusted
 local environment; add authentication, TLS, and network restrictions before external exposure.

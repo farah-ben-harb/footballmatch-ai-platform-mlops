@@ -22,7 +22,11 @@ class Detector(Protocol):
 
     model_name: str
 
-    def detect(self, frame: Any) -> list[Detection]:
+    def detect(
+        self,
+        frame: Any,
+        confidence_threshold: float | None = None,
+    ) -> list[Detection]:
         """Return detections for one frame."""
 
 
@@ -41,14 +45,39 @@ class AnalysisSummary:
     total_seconds: float
 
 
-def annotate_frame(frame: Any, detections: list[Detection]) -> Any:
+def annotate_frame(
+    frame: Any,
+    detections: list[Detection],
+) -> Any:
     """Draw labelled detection boxes on a copy of an OpenCV frame."""
+
     annotated = frame.copy()
+
     for detection in detections:
-        left, top, right, bottom = (round(value) for value in detection.bounding_box)
-        color = (0, 255, 0) if detection.label == "person" else (0, 165, 255)
-        label = f"{detection.label} {detection.confidence:.2f}"
-        cv2.rectangle(annotated, (left, top), (right, bottom), color, 2)
+        left, top, right, bottom = (
+            round(value)
+            for value in detection.bounding_box
+        )
+
+        color = (
+            (0, 255, 0)
+            if detection.label == "person"
+            else (0, 165, 255)
+        )
+
+        label = (
+            f"{detection.label} "
+            f"{detection.confidence:.2f}"
+        )
+
+        cv2.rectangle(
+            annotated,
+            (left, top),
+            (right, bottom),
+            color,
+            2,
+        )
+
         cv2.putText(
             annotated,
             label,
@@ -59,6 +88,7 @@ def annotate_frame(frame: Any, detections: list[Detection]) -> Any:
             2,
             cv2.LINE_AA,
         )
+
     return annotated
 
 
@@ -67,11 +97,21 @@ def analyze_video(
     output_path: Path,
     detector: Detector,
     target_fps: float = 5.0,
+    confidence_threshold: float | None = None,
 ) -> AnalysisSummary:
     """Run sampled inference and write an annotated MP4 output video."""
+
     metadata = read_video_metadata(input_path)
-    plan = create_sampling_plan(metadata.fps, target_fps)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    plan = create_sampling_plan(
+        metadata.fps,
+        target_fps,
+    )
+
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
     writer = cv2.VideoWriter(
         str(output_path),
@@ -79,24 +119,51 @@ def analyze_video(
         plan.effective_fps,
         (metadata.width, metadata.height),
     )
+
     if not writer.isOpened():
         writer.release()
-        raise VideoProcessingError(f"Unable to create output video: {output_path}")
+
+        raise VideoProcessingError(
+            f"Unable to create output video: {output_path}"
+        )
 
     started_at = perf_counter()
     inference_seconds = 0.0
     frames_processed = 0
+
     detection_counts: Counter[str] = Counter()
 
     try:
-        for _, frame in iter_sampled_frames(input_path, plan.frame_interval):
+        for _, frame in iter_sampled_frames(
+            input_path,
+            plan.frame_interval,
+        ):
             inference_started_at = perf_counter()
-            detections = detector.detect(frame)
-            inference_seconds += perf_counter() - inference_started_at
 
-            writer.write(annotate_frame(frame, detections))
+            detections = detector.detect(
+                frame,
+                confidence_threshold=confidence_threshold,
+            )
+
+            inference_seconds += (
+                perf_counter()
+                - inference_started_at
+            )
+
+            writer.write(
+                annotate_frame(
+                    frame,
+                    detections,
+                )
+            )
+
             frames_processed += 1
-            detection_counts.update(detection.label for detection in detections)
+
+            detection_counts.update(
+                detection.label
+                for detection in detections
+            )
+
     finally:
         writer.release()
 
