@@ -301,7 +301,9 @@ http://127.0.0.1:9090.
 On the VM, Prometheus listens at `127.0.0.1:9090` and Grafana at
 `127.0.0.1:3000`. Use SSH port forwarding for access from Windows.
 The configured K3s Service IP is specific to this single-node VM and must be
-refreshed if the Service is recreated. See [Phase 6](docs/phases/phase-06-kubernetes-observability.md).
+refreshed if the Service is recreated. A real 8.68-second K3s job populated the full
+video-duration metric, recorded a finished MLflow run, and wrote an annotated
+MP4 to the runtime PVC. See [Phase 6](docs/phases/phase-06-kubernetes-observability.md).
 
 ## Validation and security
 
