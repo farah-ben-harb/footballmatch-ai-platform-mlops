@@ -268,8 +268,28 @@ created on `/data` with UID 65534 for Prometheus and UID 472 for Grafana.
   `/data/footballmatch-observability`. At validation time `/data` had
   about 31 GiB available and `/` about 5 GiB.
 
-The new full video-job duration metric is in the feature branch and will
-appear after the next API image publication and a new analysis job.
+### End-to-end metric validation (2026-10-29)
+
+The image built from main commit `8b1bd8cdfbc9437acfd258b0f000cb2a4b12b592`
+was deployed as Helm revision 4. The 8.68-second sample was posted to
+`/analyze` at one frame per second. Job
+`f4e4d9f8-3cf0-4659-baf2-bdd083fa05ca` completed with nine frames and
+a 1,050,170-byte annotated MP4 on the PVC. MLflow run
+`045e4eb169b54629b4827629d1cd07f3` was `FINISHED` with six metrics.
+The new job was also inserted into the RAG database.
+
+Prometheus reported `up=1`, one completed video job, nine processed frames,
+and `footballmatch_video_analysis_duration_seconds_count=1` with a
+duration sum of about 18.6 seconds. This proves that the new source metric
+reached the running image and was scraped. The dashboard's duration panel
+uses that histogram's sum and count.
+
+The first manual MLflow verification called `MlflowClient()` without the
+application tracking URI and therefore searched its default local file store,
+reporting the run as missing. The API had already recorded the run remotely.
+Passing `FOOTBALLMATCH_MLFLOW_TRACKING_URI` to `MlflowClient(tracking_uri=...)`
+returned the finished run. This was a verification-command error, not a
+failed tracking run.
 
 ### Security and limitations
 
