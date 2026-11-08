@@ -14,6 +14,7 @@ service:
 config:
   environment: k3s
   mlflowTrackingUri: ""
+  detectorModelUri: ""
   mlflowExperimentName: football-video-analysis
   maxUploadSizeBytes: "100000000"
   rag:

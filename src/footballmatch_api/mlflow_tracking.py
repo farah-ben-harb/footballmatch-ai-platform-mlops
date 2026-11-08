@@ -10,6 +10,8 @@ import mlflow
 
 from footballmatch_api.cv.pipeline import AnalysisSummary
 
+DEFAULT_EXPERIMENT_NAME = "football-video-analysis"
+
 
 def _package_version(package_name: str) -> str:
     """Return an installed package version without importing the package."""
@@ -40,11 +42,12 @@ def track_analysis_run(
     summary_path: Path,
     annotated_video_path: Path,
     tracking_uri: str | None = None,
-    tracking_directory: Path | None = None,
-    experiment_name: str = "football-video-analysis",
+    tracking_directory: Path = Path("mlruns"),
+    experiment_name: str = DEFAULT_EXPERIMENT_NAME,
     job_id: str | None = None,
     original_filename: str | None = None,
     device: str = "cpu",
+    run_name: str | None = None,
 ) -> str:
     """Record one reproducible football-video analysis run in MLflow."""
 
@@ -56,7 +59,7 @@ def track_analysis_run(
             exist_ok=True,
         )
         mlflow.set_tracking_uri(
-            tracking_directory.resolve().as_uri()
+            f"sqlite:///{(tracking_directory.resolve() / 'mlflow.db').as_posix()}"
         )
 
     mlflow.set_experiment(experiment_name)
@@ -99,11 +102,8 @@ def track_analysis_run(
         else 0.0
     )
 
-    run_name = (
-        f"analysis-{job_id[:8]}"
-        if job_id
-        else None
-    )
+    if run_name is None and job_id:
+        run_name = f"analysis-{job_id[:8]}"
 
     git_commit = os.getenv(
         "FOOTBALLMATCH_GIT_COMMIT",

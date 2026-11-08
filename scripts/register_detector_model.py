@@ -1,6 +1,7 @@
 """Log and register the FootballMatch YOLO detector in MLflow."""
 
 import os
+import tempfile
 from importlib.metadata import version
 from pathlib import Path
 
@@ -40,9 +41,14 @@ def installed_version(
 def ensure_weights() -> Path:
     """Ensure YOLO weights exist locally before MLflow packages them."""
 
-    weights_directory = Path(
-        "/tmp/footballmatch-model"
-    )
+    configured_weights = os.getenv("FOOTBALLMATCH_MODEL_WEIGHTS")
+    if configured_weights:
+        weights_path = Path(configured_weights).resolve()
+        if not weights_path.is_file():
+            raise FileNotFoundError(weights_path)
+        return weights_path
+
+    weights_directory = Path(tempfile.gettempdir()) / "footballmatch-model"
 
     weights_directory.mkdir(
         parents=True,
@@ -157,8 +163,8 @@ def main() -> None:
             }
         )
 
-        mlflow.pyfunc.log_model(
-            artifact_path="detector-model",
+        model_info = mlflow.pyfunc.log_model(
+            name="detector-model",
             python_model=FootballYoloPyFunc(
                 device="cpu"
             ),
@@ -176,9 +182,7 @@ def main() -> None:
 
         run_id = run.info.run_id
 
-    model_uri = (
-        f"runs:/{run_id}/detector-model"
-    )
+    model_uri = model_info.model_uri
 
     registered = mlflow.register_model(
         model_uri=model_uri,

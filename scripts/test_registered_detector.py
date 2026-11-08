@@ -5,6 +5,7 @@ from pathlib import Path
 
 import mlflow
 import pandas as pd
+from mlflow import MlflowClient
 
 TRACKING_URI = os.getenv(
     "FOOTBALLMATCH_MLFLOW_TRACKING_URI",
@@ -27,6 +28,7 @@ IMAGE_PATH = Path(
         "/workspace/data/raw/registry-test-frame.jpg",
     )
 )
+MIN_DETECTIONS = int(os.getenv("FOOTBALLMATCH_MIN_DETECTIONS", "1"))
 
 
 def main() -> None:
@@ -87,10 +89,19 @@ def main() -> None:
         detection_count,
     )
 
-    if detection_count < 0:
+    if detection_count < MIN_DETECTIONS:
         raise RuntimeError(
-            "Invalid detection count"
+            f"Expected at least {MIN_DETECTIONS} detection(s), got {detection_count}"
         )
+
+    client = MlflowClient()
+    version = client.get_model_version_by_alias(MODEL_NAME, MODEL_ALIAS)
+    client.set_model_version_tag(
+        name=MODEL_NAME,
+        version=version.version,
+        key="smoke_test",
+        value="passed",
+    )
 
     print(
         "Registry smoke test: OK"

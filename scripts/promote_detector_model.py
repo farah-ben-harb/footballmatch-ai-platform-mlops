@@ -30,6 +30,11 @@ def main() -> None:
 
     version = candidate.version
 
+    if candidate.tags.get("smoke_test") != "passed":
+        raise RuntimeError(
+            "Candidate must pass the registered-model smoke test before promotion"
+        )
+
     print(
         "Candidate version:",
         version,
