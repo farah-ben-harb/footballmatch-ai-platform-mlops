@@ -8,6 +8,7 @@ metadata:
 data:
   FOOTBALLMATCH_ENVIRONMENT: {{ .Values.config.environment | quote }}
   FOOTBALLMATCH_MLFLOW_TRACKING_URI: {{ .Values.config.mlflowTrackingUri | quote }}
+  FOOTBALLMATCH_DETECTOR_MODEL_URI: {{ .Values.config.detectorModelUri | quote }}
   FOOTBALLMATCH_MLFLOW_EXPERIMENT_NAME: {{ .Values.config.mlflowExperimentName | quote }}
   FOOTBALLMATCH_MAX_UPLOAD_SIZE_BYTES: {{ .Values.config.maxUploadSizeBytes | quote }}
   FOOTBALLMATCH_RUNTIME_DIRECTORY: {{ .Values.persistence.mountPath | quote }}

@@ -1,7 +1,7 @@
 """Streaming computer-vision pipeline for football match videos."""
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Protocol
@@ -9,6 +9,13 @@ from typing import Any, Protocol
 import cv2
 
 from footballmatch_api.cv.detector import Detection
+from footballmatch_api.cv.team_classifier import (
+    aggregate_track_features,
+    calculate_team_clustering_quality,
+    cluster_tracks_into_teams,
+    count_tracks_by_team,
+    extract_jersey_feature,
+)
 from footballmatch_api.cv.video import (
     VideoProcessingError,
     create_sampling_plan,
@@ -22,12 +29,15 @@ class Detector(Protocol):
 
     model_name: str
 
-    def detect(
+    def track(
         self,
         frame: Any,
         confidence_threshold: float | None = None,
     ) -> list[Detection]:
-        """Return detections for one frame."""
+        """Return tracked detections for one sequential frame."""
+
+    def reset_tracking(self) -> None:
+        """Reset tracking state before processing a new video."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,13 +53,26 @@ class AnalysisSummary:
     detections_by_label: dict[str, int]
     inference_seconds: float
     total_seconds: float
+    duration_seconds: float = 0.0
+    unique_tracks_by_label: dict[str, int] = field(
+        default_factory=dict
+    )
+    team_assignments: dict[str, int] = field(
+        default_factory=dict
+    )
+    team_counts: dict[str, int] = field(
+        default_factory=dict
+    )
+    team_feature_tracks: int = 0
+    team_classification_coverage: float = 0.0
+    team_silhouette_score: float | None = None
 
 
 def annotate_frame(
     frame: Any,
     detections: list[Detection],
 ) -> Any:
-    """Draw labelled detection boxes on a copy of an OpenCV frame."""
+    """Draw labelled tracked detections on a copy of an OpenCV frame."""
 
     annotated = frame.copy()
 
@@ -65,8 +88,15 @@ def annotate_frame(
             else (0, 165, 255)
         )
 
+        track_suffix = (
+            f" #{detection.track_id}"
+            if detection.track_id is not None
+            else ""
+        )
+
         label = (
-            f"{detection.label} "
+            f"{detection.label}"
+            f"{track_suffix} "
             f"{detection.confidence:.2f}"
         )
 
@@ -99,7 +129,7 @@ def analyze_video(
     target_fps: float = 5.0,
     confidence_threshold: float | None = None,
 ) -> AnalysisSummary:
-    """Run sampled inference and write an annotated MP4 output video."""
+    """Run tracked inference and write an annotated MP4 output video."""
 
     metadata = read_video_metadata(input_path)
 
@@ -133,6 +163,18 @@ def analyze_video(
 
     detection_counts: Counter[str] = Counter()
 
+    # Example:
+    # {
+    #     "person": {1, 4, 7},
+    #     "sports ball": {12},
+    # }
+    track_ids_by_label: dict[str, set[int]] = {}
+    jersey_samples_by_track: dict[int, list[Any]] = {}
+
+    # Important: a new video must not inherit tracking state
+    # from the previous video.
+    detector.reset_tracking()
+
     try:
         for _, frame in iter_sampled_frames(
             input_path,
@@ -140,7 +182,7 @@ def analyze_video(
         ):
             inference_started_at = perf_counter()
 
-            detections = detector.detect(
+            detections = detector.track(
                 frame,
                 confidence_threshold=confidence_threshold,
             )
@@ -164,8 +206,75 @@ def analyze_video(
                 for detection in detections
             )
 
+            # Collect unique tracking IDs by object class.
+            for detection in detections:
+                if detection.track_id is None:
+                    continue
+
+                track_ids_by_label.setdefault(
+                    detection.label,
+                    set(),
+                ).add(
+                    detection.track_id
+                )
+
+                if detection.label != "person":
+                    continue
+
+                jersey_feature = extract_jersey_feature(
+                    frame,
+                    detection,
+                )
+
+                if jersey_feature is None:
+                    continue
+
+                jersey_samples_by_track.setdefault(
+                    detection.track_id,
+                    [],
+                ).append(
+                    jersey_feature
+                )
+
     finally:
         writer.release()
+
+    unique_tracks_by_label = {
+        label: len(track_ids)
+        for label, track_ids
+        in track_ids_by_label.items()
+    }
+
+    track_features = aggregate_track_features(
+        jersey_samples_by_track
+    )
+
+    team_assignments = cluster_tracks_into_teams(
+        track_features
+    )
+
+    team_counts = count_tracks_by_team(
+        team_assignments
+    )
+
+    person_tracks = unique_tracks_by_label.get(
+        "person",
+        0,
+    )
+
+    team_classification_coverage = (
+        len(team_assignments)
+        / person_tracks
+        if person_tracks > 0
+        else 0.0
+    )
+
+    team_silhouette_score = (
+        calculate_team_clustering_quality(
+            track_features,
+            team_assignments,
+        )
+    )
 
     return AnalysisSummary(
         input_path=str(input_path),
@@ -177,4 +286,15 @@ def analyze_video(
         detections_by_label=dict(detection_counts),
         inference_seconds=inference_seconds,
         total_seconds=perf_counter() - started_at,
+        duration_seconds=metadata.duration_seconds,
+        unique_tracks_by_label=unique_tracks_by_label,
+        team_assignments={
+            str(track_id): team_id
+            for track_id, team_id
+            in team_assignments.items()
+        },
+        team_counts=team_counts,
+        team_feature_tracks=len(track_features),
+        team_classification_coverage=team_classification_coverage,
+        team_silhouette_score=team_silhouette_score,
     )

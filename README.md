@@ -26,9 +26,11 @@ versioned Kubernetes, monitoring, and GitOps deployment configurations.
 
 ## Key capabilities
 
-- **Video analysis:** OpenCV frame sampling and YOLO11n detection of people and sports balls.
+- **Video analysis:** OpenCV frame sampling, YOLO11n detection of people and sports balls, and ByteTrack object IDs.
+- **Team exploration:** jersey-colour clustering per tracked person, with coverage and silhouette metrics. Cluster IDs do not establish real team identity.
 - **Asynchronous API:** video uploads, background jobs, status polling, and structured results with FastAPI.
-- **Experiment tracking:** MLflow parameters, metrics, tags, annotated videos, and model/run metadata.
+- **Experiment tracking:** MLflow parameters, metrics, tags, annotated videos, input hashes, and model/run metadata.
+- **Optional model registry:** register a YOLO detector as a candidate, smoke test it, and promote its version to the `champion` alias before selecting that alias for inference.
 - **ML component:** a standalone scikit-learn K-Means component for jersey-colour clustering.
 - **Observability:** Prometheus metrics for requests, latency, jobs, frames, detections, and inference duration.
 - **Delivery automation:** tests, linting, security checks, Docker builds, and GHCR image publication.
@@ -48,7 +50,8 @@ flowchart LR
     PM --> GF[Grafana]
 ```
 
-Locally, MLflow stores runs in `mlruns/`. The Compose configuration uses PostgreSQL
+Locally, MLflow uses SQLite at `mlruns/mlflow.db` and stores artifacts in `mlruns/`.
+The Compose configuration uses PostgreSQL
 for MLflow metadata and a separate volume for artifacts. API job state is process-local.
 
 The platform configuration adds a Helm chart for the API, a lightweight
@@ -169,12 +172,35 @@ Linux users can upload and inspect results through the same interactive API docu
 In another terminal at the repository root, start the local MLflow interface:
 
 ```powershell
-.\.venv\Scripts\python.exe -m mlflow ui --backend-store-uri ./mlruns --host 127.0.0.1 --port 5000
+.\.venv\Scripts\python.exe -m mlflow ui --backend-store-uri sqlite:///mlruns/mlflow.db --host 127.0.0.1 --port 5000
 ```
 
 Open [MLflow](http://127.0.0.1:5000) and select `football-video-analysis` to compare
 run parameters, performance metrics, detection counts, and output artifacts.
 On Linux, use `.venv/bin/python` in place of the Windows interpreter path.
+
+### Optional MLflow Model Registry workflow
+
+The normal detector remains the local `yolo11n.pt` checkpoint. With the PostgreSQL-backed
+MLflow service in Compose running, `scripts/register_detector_model.py` packages the
+checkpoint and creates a `candidate` version. Set `FOOTBALLMATCH_MODEL_WEIGHTS` to an
+existing checkpoint to avoid downloading it again. Use a football frame containing
+visible players for `scripts/test_registered_detector.py` and set
+`FOOTBALLMATCH_TEST_IMAGE` to its path. This smoke test requires at least one detection
+and tags the candidate version as tested. Only then can
+`scripts/promote_detector_model.py` assign the `champion` alias. To load it in the API,
+set `FOOTBALLMATCH_DETECTOR_MODEL_URI=models:/FootballMatchYOLODetector@champion`.
+Compose forwards this setting; Helm exposes `config.detectorModelUri` with an empty
+default. The registry scripts are included in the API image.
+
+This smoke test checks that the registered model loads and detects an object. It does
+not measure detection accuracy, tracking identity quality, or team classification
+against labelled ground truth. Review those measures on an annotated video set before
+using a candidate for a quality-sensitive deployment. No registry alias is selected
+by default.
+
+The [CV and MLOps validation record](docs/validation/cv-mlops-integration.md) separates
+the real local video and registry checks from metrics that still need labelled data.
 
 ## API reference
 

@@ -15,6 +15,7 @@ RUN apt-get update \
 
 COPY pyproject.toml README.md ./
 COPY src ./src
+COPY scripts/register_detector_model.py scripts/promote_detector_model.py scripts/test_registered_detector.py ./scripts/
 
 RUN python -m pip install --upgrade pip setuptools wheel \
     && python -m pip install --no-cache-dir \

@@ -19,6 +19,7 @@ class FakeMlflow:
         self.tags: dict[str, str] | None = None
         self.artifacts: list[tuple[str, str]] = []
         self.dictionary: tuple[dict[str, object], str] | None = None
+        self.run_name: str | None = None
 
     def set_tracking_uri(self, _: str) -> None:
         pass
@@ -28,7 +29,7 @@ class FakeMlflow:
 
     @contextmanager
     def start_run(self, run_name: str | None = None):
-        del run_name
+        self.run_name = run_name
         yield FakeRun()
 
     def log_params(self, params: dict[str, object]) -> None:
@@ -68,11 +69,17 @@ def test_track_analysis_run_logs_parameters_metrics_and_artifacts(
         summary_path=summary_path,
         annotated_video_path=output_path,
         tracking_directory=tmp_path / "tracking",
+        run_name="reviewed-video",
     )
 
     assert run_id == "run-123"
+    assert fake_mlflow.run_name == "reviewed-video"
     assert fake_mlflow.params is not None
     assert fake_mlflow.params["model_name"] == "yolo11n.pt"
     assert fake_mlflow.metrics is not None
     assert fake_mlflow.metrics["detections_person"] == 9
-    assert fake_mlflow.artifacts == [(str(summary_path), "run-output"), (str(output_path), "run-output")]
+    assert set(fake_mlflow.artifacts) == {
+        (str(summary_path), "run-output"),
+        (str(output_path), "run-output"),
+        (str(tmp_path / "model-and-run.json"), "metadata"),
+    }

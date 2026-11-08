@@ -16,8 +16,12 @@ class FakeDetector:
 
     def __init__(self) -> None:
         self.last_confidence_threshold: float | None = None
+        self.reset_called = False
 
-    def detect(
+    def reset_tracking(self) -> None:
+        self.reset_called = True
+
+    def track(
         self,
         frame: str,
         confidence_threshold: float | None = None,
@@ -27,21 +31,26 @@ class FakeDetector:
         if frame == "frame-0":
             return [
                 Detection(
-                    0,
-                    "person",
-                    0.9,
-                    (1.0, 2.0, 3.0, 4.0),
+                    class_id=0,
+                    label="person",
+                    confidence=0.9,
+                    bounding_box=(1.0, 2.0, 3.0, 4.0),
+                    track_id=7,
                 )
             ]
 
-        return [
-            Detection(
-                32,
-                "sports ball",
-                0.8,
-                (5.0, 6.0, 7.0, 8.0),
-            )
-        ]
+        if frame == "frame-10":
+            return [
+                Detection(
+                    class_id=32,
+                    label="sports ball",
+                    confidence=0.8,
+                    bounding_box=(5.0, 6.0, 7.0, 8.0),
+                    track_id=12,
+                )
+            ]
+
+        return []
 
 
 class FakeWriter:
@@ -150,6 +159,7 @@ def test_analyze_video_uses_runtime_parameters(
 
     assert sampling["target_fps"] == 3.0
     assert detector.last_confidence_threshold == 0.4
+    assert detector.reset_called is True
 
     assert writer.frames == [
         "annotated-frame-0",
@@ -166,6 +176,11 @@ def test_analyze_video_uses_runtime_parameters(
     }
 
     assert summary.model_name == "fake-yolo.pt"
+
+    assert summary.unique_tracks_by_label == {
+        "person": 1,
+        "sports ball": 1,
+    }
 
 
 def test_analyze_video_rejects_unavailable_output_writer(
