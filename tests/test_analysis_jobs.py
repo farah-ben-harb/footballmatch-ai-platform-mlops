@@ -130,6 +130,10 @@ def test_run_uses_job_parameters_and_reuses_detector(
     assert captured["mlflow_confidence"] == 0.4
     assert captured["mlflow_sample_fps"] == 3.0
 
+    assert completed.result is not None
+    assert "input_path" not in completed.result
+    assert "output_path" not in completed.result
+
 
 def test_run_records_pipeline_failures(
     monkeypatch,
@@ -173,4 +177,5 @@ def test_run_records_pipeline_failures(
 
     assert failed is not None
     assert failed.status == "failed"
-    assert failed.error == "bad video"
+    assert failed.error == analysis_jobs.PUBLIC_FAILURE_MESSAGE
+    assert "bad video" not in failed.model_dump_json()

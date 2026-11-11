@@ -158,7 +158,8 @@ Invoke-RestMethod -Uri "$baseUrl/matches/$($job.id)" | ConvertTo-Json -Depth 6
 ```
 
 The response contains the detection summary, frame count, timing measurements,
-output path, and `mlflow_run_id`. With the runtime setting above, files are written to:
+and `mlflow_run_id`. Server-local input and output paths are intentionally omitted
+from the public response. With the runtime setting above, files are written to:
 
 ```text
 artifacts/runtime/jobs/<job-id>/annotated.mp4
