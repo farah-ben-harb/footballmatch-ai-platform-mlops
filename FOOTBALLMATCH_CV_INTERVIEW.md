@@ -28,6 +28,10 @@ analytics product or as a model-accuracy benchmark.
 - Azure Container Apps demo path documented with scale-to-zero and commit-SHA image
 - Prometheus and Grafana observability with application metrics and dashboard
 
+The Azure statement must be qualified as a documented historical CPU demo. The
+repository does not demonstrate Azure Helm/Argo deployment, PostgreSQL/pgvector
+hosting, or Prometheus/Grafana monitoring for that environment.
+
 ### Infrastructure / SRE CV
 
 - CI gates with pytest, Ruff, Gitleaks, Semgrep, and Trivy
@@ -157,4 +161,18 @@ validation, and malware scanning before public exposure.
   switches, and team-classification accuracy are not established.
 - There is no durable queue, object-storage lifecycle, multi-replica coordination,
   authentication layer, or tested disaster-recovery procedure.
+
+## Deployment-path explanation for interviews
+
+- **Local:** Compose starts PostgreSQL, MLflow, and the API together; named
+  volumes hold database data, MLflow artifacts, and runtime output. Prometheus and
+  Grafana are an optional local overlay.
+- **K3s:** Helm and Argo CD deploy the API workload and runtime PVC. The documented
+  single-node setup keeps MLflow, PostgreSQL, and Ollama outside the chart and
+  reaches them through configured host addresses. This is not the same topology
+  as Compose service DNS.
+- **Azure:** A separately documented Container Apps demo consumed a GHCR image and
+  exposed FastAPI over HTTPS. It used ephemeral storage and SQLite MLflow metadata;
+  no Helm, Argo CD, PostgreSQL/pgvector, or Prometheus/Grafana integration is
+  established for that path.
 

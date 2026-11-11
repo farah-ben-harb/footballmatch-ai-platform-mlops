@@ -107,6 +107,70 @@ by the pull-request workflow.
 
 ## Environment topology
 
+### Development local
+
+```mermaid
+flowchart LR
+    DEV[Developer workstation] --> API[FastAPI container or Python process]
+    API --> VOL[(api-runtime volume)]
+    API --> MLF[MLflow Compose service]
+    MLF --> PG[(PostgreSQL pgvector container)]
+    MLF --> ART[(MLflow artifacts volume)]
+    API -. optional RAG .-> PG
+    OBS[Prometheus/Grafana overlay] -. scrapes .-> API
+```
+
+This path is defined by `compose.yaml`, `Dockerfile`, and the optional
+`compose.observability.yaml`. PostgreSQL is required by the Compose MLflow
+backend. The API uses the Compose DNS name `mlflow`; the RAG extension uses the
+database credentials supplied through the local ignored `.env` when enabled.
+The repository contains configuration and historical local validation records;
+this session did not start Docker because Docker is not available on the host.
+
+### Kubernetes/K3s
+
+```mermaid
+flowchart LR
+    GIT[Git main + Helm chart] --> ARGO[Argo CD Application]
+    ARGO --> API[FootballMatch API Pod]
+    GHCR[GHCR immutable image digest] --> API
+    API --> PVC[(Runtime PVC)]
+    API --> MLF[MLflow on VM or external service]
+    API --> PG[External PostgreSQL/pgvector]
+    API --> OLL[External Ollama]
+    PROM[Prometheus] -->|/metrics| API
+    GRAF[Grafana] --> PROM
+```
+
+The Helm chart deploys the API, Service, ConfigMap, optional existing Secret
+reference, probes, resource limits, non-root security settings, and a runtime
+PVC. It does not deploy PostgreSQL, MLflow, Ollama, Prometheus, or Grafana. The
+Argo CD manifest supplies environment-specific endpoints and an image digest.
+The documented K3s validation is historical: it recorded a healthy Pod, PVC,
+Helm release, MLflow connectivity, and an inference run. No K3s rollout or
+rollback was executed in this session.
+
+### Azure Container Apps
+
+```mermaid
+flowchart LR
+    CI[GitHub Actions on main] --> GHCR[GHCR image tagged by commit SHA]
+    GHCR --> ACA[Azure Container App]
+    ACA --> API[FastAPI API]
+    ACA --> EP[Ephemeral container storage]
+    ACA --> MLF[SQLite MLflow backend in demo container]
+    CLIENT[HTTPS client] --> ACA
+```
+
+The Azure path is independent of Helm and Argo CD. The repository contains no
+Azure deployment script or Bicep/Terraform resource definition; it contains a
+manual validation record and `az containerapp show` inspection commands. The
+record describes a historical public CPU demo using a GHCR commit-SHA image,
+scale-to-zero, ephemeral storage, and SQLite MLflow metadata. It explicitly
+states that PostgreSQL/pgvector and Ollama were absent from that demo. The
+repository provides no evidence that Prometheus or Grafana monitored the Azure
+Container App; only the API `/metrics` endpoint was checked.
+
 ### Local Python
 
 The project requires Python 3.11 or newer and the repository examples use Python
@@ -138,6 +202,19 @@ the documented deployment at that time, not a claim that the endpoint is current
 reachable or that the Kubernetes manifests run in Azure. Production would require
 durable storage, authentication, queue-backed workers, and a managed tracking
 database.
+
+## Deployment evidence matrix
+
+| Item | Local Compose | K3s/Kubernetes | Azure Container Apps |
+| --- | --- | --- | --- |
+| API packaging | Dockerfile and Compose build | Same image through GHCR | Same image through GHCR |
+| MLflow | Compose service with PostgreSQL backend | External service on documented VM path | Historical SQLite in demo container |
+| PostgreSQL/pgvector | Compose service | External dependency when RAG is enabled | Not present in recorded demo |
+| Helm/Argo CD | Not used | Helm chart and Argo Application configured | Not used |
+| Prometheus/Grafana | Optional Compose overlay | External/lightweight monitoring path | Not evidenced; `/metrics` was checked |
+| Persistent storage | Named Docker volumes | Runtime PVC | Ephemeral container storage |
+| Current runtime validation | Not rerun in this session | Not rerun in this session | Historical record only |
+| Rollback evidence | Not captured | Historical recovery note; controlled rollback remains pending | Not captured |
 
 ## Observability
 
