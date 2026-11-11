@@ -44,6 +44,25 @@ class AnalysisJob:
 
 logger = logging.getLogger(__name__)
 
+PUBLIC_FAILURE_MESSAGE = (
+    "Video analysis failed. Check the server logs using the job identifier."
+)
+_PRIVATE_RESULT_FIELDS = {"input_path", "output_path"}
+
+
+def _public_result(result: dict[str, object] | None) -> dict[str, object] | None:
+    """Remove server-local paths before a result crosses the HTTP boundary."""
+
+    if result is None:
+        return None
+
+    return {
+        key: value
+        for key, value in result.items()
+        if key not in _PRIVATE_RESULT_FIELDS
+    }
+
+
 class AnalysisJobService:
     """Persist uploads locally and process one video in a daemon thread."""
 
@@ -217,7 +236,12 @@ class AnalysisJobService:
             for label, count in summary.detections_by_label.items():
                 DETECTIONS.labels(label=label).inc(count)
 
-        except Exception as error:  # noqa: BLE001
+        except Exception as error:
+            logger.exception(
+                "Video analysis failed for job_id=%s",
+                job_id,
+            )
+
             with self._lock:
                 failed_job = self._jobs[job_id]
                 failed_job.status = "failed"
@@ -241,8 +265,12 @@ class AnalysisJobService:
                 id=job.id,
                 status=job.status,  # type: ignore[arg-type]
                 original_filename=job.original_filename,
-                error=job.error,
-                result=job.result,
+                error=(
+                    PUBLIC_FAILURE_MESSAGE
+                    if job.status == "failed"
+                    else None
+                ),
+                result=_public_result(job.result),
                 mlflow_run_id=job.mlflow_run_id,
             )
 
