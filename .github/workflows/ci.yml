@@ -5,6 +5,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish the GHCR image for the selected main commit"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -82,7 +88,7 @@ jobs:
         run: docker compose -f compose.yaml -f compose.observability.yaml --profile observability config --quiet
 
   publish-image:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish == true
     needs: [test, secrets, sast, container-scan]
     runs-on: ubuntu-24.04
     permissions:
