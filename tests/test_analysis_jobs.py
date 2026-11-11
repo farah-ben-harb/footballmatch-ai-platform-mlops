@@ -1,9 +1,11 @@
 from io import BytesIO
 from pathlib import Path
 
+import pytest
 from prometheus_client import REGISTRY
 
 from footballmatch_api.cv.pipeline import AnalysisSummary
+from footballmatch_api.cv.video import VideoProcessingError
 from footballmatch_api.services import analysis_jobs
 
 
@@ -96,6 +98,7 @@ def test_run_uses_job_parameters_and_reuses_detector(
         100,
         detector_factory=detector_factory,
         pipeline=fake_pipeline,
+        video_validator=lambda _path: None,
     )
 
     job = service.save_upload(
@@ -156,6 +159,7 @@ def test_run_records_pipeline_failures(
         100,
         detector_factory=FakeDetector,
         pipeline=failing_pipeline,
+        video_validator=lambda _path: None,
     )
 
     job = service.save_upload(
@@ -179,3 +183,49 @@ def test_run_records_pipeline_failures(
     assert failed.status == "failed"
     assert failed.error == analysis_jobs.PUBLIC_FAILURE_MESSAGE
     assert "bad video" not in failed.model_dump_json()
+
+
+def test_save_upload_rejects_unreadable_video(tmp_path: Path) -> None:
+    def reject_video(_path: Path) -> None:
+        raise VideoProcessingError("decoder failure")
+
+    service = analysis_jobs.AnalysisJobService(
+        tmp_path,
+        100,
+        video_validator=reject_video,
+    )
+
+    with pytest.raises(ValueError, match="not a readable video"):
+        service.save_upload("match.mp4", BytesIO(b"not-a-video"))
+
+    assert not list((tmp_path / "uploads").glob("**/*"))
+
+
+def test_start_is_idempotent_for_a_queued_job(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    started: list[str] = []
+
+    class FakeThread:
+        def __init__(self, *, target, args, daemon, name) -> None:
+            del target, daemon, name
+            started.append(args[0])
+
+        def start(self) -> None:
+            pass
+
+    monkeypatch.setattr(analysis_jobs, "Thread", FakeThread)
+
+    service = analysis_jobs.AnalysisJobService(
+        tmp_path,
+        100,
+        video_validator=lambda _path: None,
+    )
+    job = service.save_upload("match.mp4", BytesIO(b"video"))
+
+    service.start(job.id)
+    service.start(job.id)
+
+    assert started == [job.id]
+    assert service.get(job.id).status == "running"

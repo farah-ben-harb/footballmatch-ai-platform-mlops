@@ -74,6 +74,19 @@ jobs:
           ignore-unfixed: true
           severity: CRITICAL
 
+  compose-validation:
+    runs-on: ubuntu-24.04
+    env:
+      POSTGRES_PASSWORD: ci-only-placeholder
+      GRAFANA_ADMIN_PASSWORD: ci-only-placeholder
+      K3S_API_SERVICE_IP: 10.0.0.10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate local Compose configuration
+        run: docker compose -f compose.yaml config --quiet
+      - name: Validate observability Compose configuration
+        run: docker compose -f compose.yaml -f compose.observability.yaml --profile observability config --quiet
+
   publish-image:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish == true
     needs: [test, secrets, sast, container-scan]

@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from footballmatch_api.cv.detector import YoloDetector
 from footballmatch_api.cv.pipeline import AnalysisSummary, analyze_video
+from footballmatch_api.cv.video import VideoProcessingError, read_video_metadata
 from footballmatch_api.mlflow_tracking import track_analysis_run
 from footballmatch_api.observability import (
     DETECTIONS,
@@ -82,6 +83,7 @@ class AnalysisJobService:
         mlflow_experiment_name: str = "football-video-analysis",
         detector_factory: Callable[[], YoloDetector] = YoloDetector,
         pipeline: Callable[..., AnalysisSummary] = analyze_video,
+        video_validator: Callable[[Path], object] = read_video_metadata,
     ) -> None:
         self.runtime_directory = runtime_directory
         self.max_upload_size_bytes = max_upload_size_bytes
@@ -89,6 +91,7 @@ class AnalysisJobService:
         self.mlflow_experiment_name = mlflow_experiment_name
         self._detector_factory = detector_factory
         self._pipeline = pipeline
+        self._video_validator = video_validator
         self._jobs: dict[str, AnalysisJob] = {}
         self._lock = Lock()
         self._model_lock = Lock()
@@ -133,6 +136,13 @@ class AnalysisJobService:
 
                 destination.write(chunk)
 
+        try:
+            self._video_validator(input_path)
+        except (OSError, VideoProcessingError) as error:
+            input_path.unlink(missing_ok=True)
+            input_directory.rmdir()
+            raise ValueError("Uploaded file is not a readable video") from error
+
         job = AnalysisJob(
             id=job_id,
             original_filename=safe_name,
@@ -151,6 +161,19 @@ class AnalysisJobService:
     def start(self, job_id: str) -> None:
         """Run the job asynchronously after its upload has been persisted."""
 
+        with self._lock:
+            job = self._jobs.get(job_id)
+
+            if job is None:
+                raise KeyError(f"Unknown analysis job: {job_id}")
+
+            # Mark the job before starting the thread so repeated callers cannot
+            # schedule the same queued job twice.
+            if job.status != "queued":
+                return
+
+            job.status = "running"
+
         Thread(
             target=self.run,
             args=(job_id,),
@@ -163,7 +186,12 @@ class AnalysisJobService:
 
         started_at = perf_counter()
         job = self._get_internal(job_id)
-        self._set_status(job_id, "running")
+
+        with self._lock:
+            if job.status not in {"queued", "running"}:
+                return
+
+            job.status = "running"
 
         output_directory = self.runtime_directory / "jobs" / job_id
         output_path = output_directory / "annotated.mp4"
